@@ -14,7 +14,7 @@ function setupCanvas(canvas, height = 120) {
   return { ctx, width, height };
 }
 
-function placeholder(canvas, text = "NO DATA") {
+export function placeholder(canvas, text = "NO DATA") {
   const { ctx, width, height } = setupCanvas(canvas);
   ctx.fillStyle = "#1a2126";
   ctx.fillRect(0, 0, width, height);
@@ -101,6 +101,55 @@ export function drawBars(canvas, entries, opts = {}) {
       ctx.fillText(Number(e.value).toFixed(2), width - 4, y + 10);
     }
   });
+}
+
+export function drawLine(canvas, series, opts = {}) {
+  // series: numeric vector (e.g. latest amplitude frame). Renders a
+  // labelled line chart with min/max gridlines + legend. Null → placeholder.
+  if (!series || !series.length) {
+    placeholder(canvas, opts.emptyText || "NO DATA");
+    return;
+  }
+  const { ctx, width, height } = setupCanvas(canvas, opts.height || 140);
+  let lo = Math.min(...series), hi = Math.max(...series);
+  if (!(hi > lo)) { hi = lo + 1; }
+  const padL = 34, padB = 14, padT = 16;
+  const iw = width - padL - 6, ih = height - padT - padB;
+  ctx.fillStyle = "#141a1e";
+  ctx.fillRect(0, 0, width, height);
+  ctx.font = "10px monospace";
+  // gridlines at min / mid / max with y labels
+  ctx.strokeStyle = "#222c31";
+  ctx.fillStyle = "#5f7373";
+  ctx.textAlign = "right";
+  [[hi, padT], [(hi + lo) / 2, padT + ih / 2], [lo, padT + ih]].forEach(
+    ([v, y]) => {
+      ctx.beginPath(); ctx.moveTo(padL, y); ctx.lineTo(width - 6, y);
+      ctx.stroke();
+      ctx.fillText(v.toFixed(1), padL - 4, y + 3);
+    });
+  // x labels: tone index range
+  ctx.textAlign = "left";
+  ctx.fillText(`tone 0`, padL, height - 3);
+  ctx.textAlign = "right";
+  ctx.fillText(`tone ${series.length - 1}`, width - 6, height - 3);
+  // trace
+  ctx.strokeStyle = opts.color || "#37c6d4";
+  ctx.lineWidth = 1.5;
+  ctx.beginPath();
+  series.forEach((v, i) => {
+    const x = padL + (i / Math.max(series.length - 1, 1)) * iw;
+    const y = padT + ih - ((v - lo) / (hi - lo)) * ih;
+    if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+  });
+  ctx.stroke();
+  // legend
+  ctx.fillStyle = "#7d8b8b";
+  ctx.textAlign = "left";
+  const last = series[series.length - 1];
+  ctx.fillText(`${opts.label || "value"} n=${series.length} ` +
+    `last=${Number(last).toFixed(1)} [${lo.toFixed(1)}..${hi.toFixed(1)}]`,
+    padL, 11);
 }
 
 export function drawRoom2d(canvas, model) {

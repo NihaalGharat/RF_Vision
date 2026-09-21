@@ -19,7 +19,7 @@ export const SettingsTab = {
           <div class="kv">
             <dt>flash / erase / reset</dt><dd>never</dd>
             <dt>router changes</dt><dd>never</dd>
-            <dt>live capture</dt><dd>blocked by RFVISION-003R</dd>
+            <dt>live capture</dt><dd>diagnostic only (≤30 s, explicit, via Experiments)</dd>
             <dt>human experiments</dt><dd>not in this phase</dd>
             <dt>model training</dt><dd>not in this phase</dd>
           </div></div>

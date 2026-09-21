@@ -106,10 +106,22 @@ class ConsoleServerTests(unittest.TestCase):
         self.assertFalse(data["available"])
         self.assertIsNone(data["event"])
 
-    def test_live_source_refused(self):
+    def test_live_source_binds_unverified(self):
+        # RFVISION-009: live binds to the validated receiver. Binding
+        # never touches hardware (no serial open until stream start);
+        # sessions start LIVE_UNVERIFIED until the session gate passes.
         code, data = self.post("/api/v1/source", {"mode": "live"})
-        self.assertEqual(code, 409)
-        self.assertIn("003R", data["error"])
+        self.assertEqual(code, 200)
+        self.assertEqual(data["mode"], "live")
+        self.assertEqual(data["source_state"], "LIVE_UNVERIFIED")
+        code, live = self.get("/api/v1/live")
+        self.assertEqual(code, 200)
+        self.assertTrue(live["available"])
+        self.assertEqual(live["source_state"], "LIVE_UNVERIFIED")
+        self.assertEqual(live["port"], "/dev/ttyUSB0")
+        self.assertEqual(live["baud"], 921600)
+        self.assertIn(live["gate"]["passed"], (True, False))
+        self.post("/api/v1/source", {"mode": "off"})  # release, still untouched
 
     def test_bad_source_rejected(self):
         code, _ = self.post("/api/v1/source", {"mode": "quantum"})

@@ -1,6 +1,7 @@
-/* Hardware tab — validated baseline display + live link state.
+/* Hardware tab — validated baseline + ACTUAL live link health.
    RF Vision native. Baseline values come from the backend (constants gated
-   by docs/hardware/BASELINE.md); anything unverified renders UNKNOWN. */
+   by docs/hardware/BASELINE.md); link health comes from /api/v1/live.
+   Anything unverified renders UNKNOWN. */
 import { api } from "../api.js";
 import { pillFor } from "../banner.js";
 
@@ -10,20 +11,36 @@ export const HardwareTab = {
     this.ctx = ctx;
     el.innerHTML = `
       <div class="grid">
-        <div class="card"><h3>Validated baseline (unchanged)</h3><div class="kv" id="hw-base"></div></div>
-        <div class="card"><h3>Link state</h3><div class="kv" id="hw-link"></div>
-          <p class="state-note">Firmware identity is UNKNOWN until a read-back
-          is possible without reset (blocked in this phase).</p></div>
+        <div class="card"><h3>Receiver — validated baseline</h3>
+          <div class="kv" id="hw-base"></div></div>
+        <div class="card"><h3>Link state — live</h3>
+          <div class="kv" id="hw-link"></div></div>
+        <div class="card"><h3>Transport diagnostics</h3>
+          <div class="kv" id="hw-diag"></div>
+          <p class="state-note">Firmware identity stays UNKNOWN until a
+          read-back is possible without reset. No flash / erase / reset is
+          ever initiated from this console.</p></div>
       </div>`;
     this.refresh();
+    this._timer = setInterval(() => this.refresh(), 2000);
   },
-  onShow() { this.refresh(); },
+  onHide() { if (this._timer) { clearInterval(this._timer); this._timer = null; } },
+  onShow() {
+    if (!this._timer) this._timer = setInterval(() => this.refresh(), 2000);
+    this.refresh();
+  },
   onState() { this.renderLink(); },
   async refresh() {
     try {
       this._exp = await api.experiment();
     } catch {
       this._exp = null;
+    }
+    try {
+      const live = await api.live();
+      this._live = live && live.available ? live : null;
+    } catch {
+      this._live = null;
     }
     this.renderAll();
   },
@@ -35,24 +52,41 @@ export const HardwareTab = {
     } else {
       const h = e.hardware, f = e.firmware;
       base.innerHTML = [
-        ["esp32", h.esp32], ["flash", `${h.flash_mb} MB`],
-        ["csi stack", h.csi_stack], ["router", h.router],
-        ["band", h.band], ["transport", h.transport],
+        ["receiver", h.receiver || h.esp32],
+        ["mac", h.receiver_mac || "UNKNOWN"],
+        ["flash", `${h.flash_mb} MB`],
+        ["csi stack", h.csi_stack],
+        ["router", h.router],
+        ["band", h.band],
         ["firmware", `${f.name} (esp-csi ${f.esp_csi_commit.slice(0, 8)})`],
         ["esp-idf", f.esp_idf],
+        ["cp2102", "USB-UART bridge → /dev/ttyUSB0"],
       ].map(([k, v]) => `<dt>${k}</dt><dd>${v}</dd>`).join("");
     }
     this.renderLink();
   },
   renderLink() {
     const snap = this.ctx.store.snapshot();
-    const e = this._exp;
-    this.el.querySelector("#hw-link").innerHTML = [
+    const L = this._live;
+    const link = [
       ["source", pillFor(snap.state)],
-      ["serial", `<span class="unknown">UNKNOWN (no live probe this phase)</span>`],
-      ["firmware identity", e ? e.firmware.identity : "UNKNOWN"],
+      ["serial", L ? `${L.port} @ ${L.baud} 8N1` : `<span class="unknown">UNKNOWN (no live session)</span>`],
+      ["transport", L ? (L.transport.open ? "open" : "closed") : "UNKNOWN"],
+      ["throughput", L && L.transport.bytes_per_s != null
+        ? `${(L.transport.bytes_per_s / 1000).toFixed(1)} kB/s` : "UNKNOWN"],
       ["last packet", snap.ageMs === null ? "none this session" : `${(snap.ageMs / 1000).toFixed(1)} s ago`],
-      ["capture state", snap.state === "DISCONNECTED" ? "idle — live blocked by 003R" : snap.state],
-    ].map(([k, v]) => `<dt>${k}</dt><dd>${v}</dd>`).join("");
+    ];
+    this.el.querySelector("#hw-link").innerHTML =
+      link.map(([k, v]) => `<dt>${k}</dt><dd>${v}</dd>`).join("");
+    const diag = L ? [
+      ["channel", L.signal.channel != null ? `CH ${L.signal.channel}` : "UNKNOWN"],
+      ["bssid", L.signal.bssid || "UNKNOWN"],
+      ["csi length", L.signal.csi_len != null ? L.signal.csi_len : "UNKNOWN"],
+      ["tones", L.signal.tones != null ? L.signal.tones : "UNKNOWN"],
+      ["transport error", L.transport.error || "none"],
+      ["firmware identity", (this._exp ? this._exp.firmware.identity : "UNKNOWN")],
+    ] : [["diagnostics", `<span class="unknown">NO LIVE SESSION</span>`]];
+    this.el.querySelector("#hw-diag").innerHTML =
+      diag.map(([k, v]) => `<dt>${k}</dt><dd>${v}</dd>`).join("");
   },
 };

@@ -1,0 +1,19 @@
+{
+  "source": "live board capture, 10 s diagnostic, ambient room, no human subject",
+  "board_mac": "b0:3f:d3:70:20:3c",
+  "board": "ESP32-D0WD-V3 Rev 3.1, 4 MB flash",
+  "firmware_commit": "8633d67152db2808f141cc1595970aa9cf406045",
+  "idf_commit": "296b6eab9445fd720e71aecb961e2d3fbca9944",
+  "app_binary_sha256": "bc7a5cd586c6e9e136607a042760aa2d2b939fa671a38ff64aa6eb5b4927e321",
+  "app_binary_note": "creds-baked rebuild of the C0 source tree; source files byte-identical to C0, only Kconfig SSID/password differ",
+  "raw_capture_sha256": "60bf5edeb54d3c0c3415e781465ade6185aa7d2871e96b35e52267c8dc490e0c",
+  "raw_capture_bytes": 483356,
+  "fixture_file": "csi_sample_50.txt",
+  "fixture_lines": 50,
+  "fixture_seq_range": [13990, 14039],
+  "fixture_sha256": "4616001aa18afa322e8c2385d4e373f5979619de228850e77b32177bdf41a0d3",
+  "adapter": "csi/parser/esp_csv_adapter.py parse_esp_csv_line (CSI_DATA_COLUMNS=25)",
+  "schema": "CSI_DATA 25-column legacy, classic ESP32 rx_ctrl layout",
+  "created_utc": "2026-09-21T20:45:00Z",
+  "label": "LIVE BOARD EVIDENCE — genuine records; ambient only, never sensing/localization evidence"
+}

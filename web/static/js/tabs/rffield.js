@@ -24,6 +24,7 @@ export const RfFieldTab = {
       </div>`;
     this.scene = new RfLinkScene(el.querySelector("#rf-scene"));
     this._failed = false;
+    this._hudExtra = "";
     try {
       this.scene.init();
     } catch (e) {
@@ -33,6 +34,8 @@ export const RfFieldTab = {
       console.error("scene init", e);
     }
     this.refreshCal();
+    this._timer = setInterval(() => this.pollLive(), 2000);
+    this.pollLive();
   },
   async refreshCal() {
     try {
@@ -45,9 +48,32 @@ export const RfFieldTab = {
   },
   onShow() {
     this.scene?.resize();
+    if (!this._timer) {
+      this._timer = setInterval(() => this.pollLive(), 2000);
+      this.pollLive();
+    }
     this.paint();
   },
-  onHide() { /* scene keeps rendering; cheap single link */ },
+  onHide() {
+    if (this._timer) { clearInterval(this._timer); this._timer = null; }
+  },
+  async pollLive() {
+    try {
+      const live = await api.live();
+      if (live && live.available) {
+        const st = live.stream, sg = live.signal;
+        this._hudExtra = `${live.source_state} · ` +
+          `${st.rate_hz != null ? st.rate_hz.toFixed(1) + " Hz" : "rate ?"} · ` +
+          `rssi ${sg.rssi_last != null ? sg.rssi_last : "?"} · ` +
+          `seq ${st.last_seq != null ? st.last_seq : "?"}`;
+      } else {
+        this._hudExtra = "";
+      }
+    } catch {
+      this._hudExtra = "";
+    }
+    this.paint();
+  },
   onEvent(ev) {
     if (!ev || ev.type !== "sensing.snapshot") return;
     const p = ev.payload;
@@ -71,6 +97,7 @@ export const RfFieldTab = {
         amplitudes: this._amps ?? null,
         positionT: this._pos ?? null,
         uncertainty: null, // no validated uncertainty yet
+        hudExtra: this._hudExtra || null,
       });
     }
   },

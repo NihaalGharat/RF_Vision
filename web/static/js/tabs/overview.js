@@ -1,88 +1,142 @@
-/* Overview tab — system/sensor/backend/source status + latest state.
-   RF Vision native. Unknown values render UNKNOWN, never invented. */
+/* Overview tab — RF Vision / Sensor / CSI / System / Research.
+   RF Vision native. Every value is read live from the backend; anything
+   unavailable renders UNKNOWN, never invented. */
 import { api } from "../api.js";
 import { pillFor, fmtUnknown } from "../banner.js";
+
+const num = (v, f) => fmtUnknown(v, f);
 
 export const OverviewTab = {
   init(el, ctx) {
     this.el = el;
     this.ctx = ctx;
+    this._last = null;
     el.innerHTML = `
       <div class="grid">
-        <div class="card"><h3>System status</h3><div class="kv" id="ov-sys">
-          <dt>loading…</dt></div></div>
-        <div class="card"><h3>Latest sensing state</h3><div class="kv" id="ov-sense">
-          <dt>loading…</dt></div>
-          <p class="caveat">Presence/activity are unvalidated UI fields — not conclusions.</p></div>
-        <div class="card"><h3>Session / validation</h3><div class="kv" id="ov-exp">
-          <dt>loading…</dt></div></div>
-        <div class="card"><h3>RF link</h3><div class="kv" id="ov-link">
-          <dt>loading…</dt></div></div>
+        <div class="card card-hero"><h3>RF Vision</h3>
+          <div class="hero-state" id="ov-hero">…</div>
+          <div class="kv" id="ov-sys"></div></div>
+        <div class="card"><h3>Sensor — ESP32 receiver</h3>
+          <div class="kv" id="ov-sensor"></div></div>
+        <div class="card"><h3>CSI — live signal</h3>
+          <div class="kv" id="ov-csi"></div></div>
+        <div class="card"><h3>System — backend / stream</h3>
+          <div class="kv" id="ov-backend"></div></div>
+        <div class="card"><h3>Research — validation state</h3>
+          <div class="kv" id="ov-research"></div>
+          <p class="caveat">Calibration, localization and XAI are not
+          validated. Telemetry above is transport + signal only.</p></div>
+        <div class="card"><h3>Latest frame</h3>
+          <div class="kv" id="ov-frame"></div></div>
       </div>`;
     this.refresh();
+    this._timer = setInterval(() => this.refresh(), 2000);
   },
-  onShow() { this.refresh(); },
-  onState() { this.renderSense(); },
+  onHide() { if (this._timer) { clearInterval(this._timer); this._timer = null; } },
+  onShow() {
+    if (!this._timer) this._timer = setInterval(() => this.refresh(), 2000);
+    this.refresh();
+  },
+  onState() { this.renderHero(); this.renderFrame(); },
   onEvent(ev) {
     if (ev && ev.type === "sensing.snapshot") {
       this._last = ev;
-      this.renderSense();
+      this.renderFrame();
     }
-  },
-  async refresh() {
-    try {
-      const [status, exp] = await Promise.all([api.status(), api.experiment()]);
-      this._status = status;
-      this._exp = exp;
-    } catch (e) {
-      this._status = null;
-      this._exp = null;
-    }
-    this.renderAll();
   },
   kv(id, rows) {
     const node = this.el.querySelector(`#${id}`);
-    node.innerHTML = rows.map(([k, v]) => `<dt>${k}</dt><dd>${v}</dd>`).join("");
+    if (node) {
+      node.innerHTML = rows.map(([k, v]) =>
+        `<dt>${k}</dt><dd>${v}</dd>`).join("");
+    }
+  },
+  async refresh() {
+    let status = null, exp = null, live = null;
+    try {
+      [status, exp] = await Promise.all([api.status(), api.experiment()]);
+    } catch { /* unreachable backend */ }
+    try {
+      live = await api.live();
+    } catch { live = null; }
+    this._status = status;
+    this._exp = exp;
+    this._live = live && live.available ? live : null;
+    this.renderAll();
+  },
+  renderHero() {
+    const snap = this.ctx.store.snapshot();
+    const s = this._status;
+    const hero = this.el.querySelector("#ov-hero");
+    if (hero) {
+      hero.innerHTML = `${pillFor(snap.state)}
+        <span class="hero-sub">${s ? s.connection : "UNKNOWN"} · ` +
+        `${s && s.csi_rate != null ? `${s.csi_rate.toFixed(1)} Hz` : "rate UNKNOWN"}</span>`;
+    }
+    this.kv("ov-sys", [[
+      "source", pillFor(snap.state),
+    ]]);
   },
   renderAll() {
-    const s = this._status, e = this._exp;
-    const snap = this.ctx.store.snapshot();
+    const s = this._status, e = this._exp, L = this._live;
+    this.renderHero();
     this.kv("ov-sys", [
-      ["source", pillFor(snap.state)],
       ["backend", s ? "reachable" : `<span class="unknown">UNREACHABLE</span>`],
       ["connection", s ? s.connection : "UNKNOWN"],
-      ["packets", s ? s.packets : "UNKNOWN"],
-      ["malformed", s ? s.malformed : "UNKNOWN"],
-      ["stale", s ? String(s.stale) : "UNKNOWN"],
-    ]);
-    this.kv("ov-exp", [
-      ["session", e ? e.session_id : "UNKNOWN"],
+      ["stream", e ? e.session_id : "UNKNOWN"],
       ["validation", e ? e.validation : "UNKNOWN"],
-      ["raw data", e && e.raw_ref ? JSON.stringify(e.raw_ref) : "none (no capture this session)"],
-      ["web console", e ? e.software.rfvision_web : "UNKNOWN"],
     ]);
-    this.kv("ov-link", [
-      ["path", "Xiaomi AP → ESP32 → USB serial → console"],
-      ["firmware identity", e ? e.firmware.identity : "UNKNOWN"],
-      ["csi rate (Hz)", s ? fmtUnknown(s.csi_rate, (v) => v.toFixed(1)) : "UNKNOWN"],
-      ["model", s ? s.model : "UNKNOWN"],
+    const hw = e ? e.hardware : null;
+    this.kv("ov-sensor", [
+      ["sensor", hw ? (hw.receiver || hw.esp32) : "UNKNOWN"],
+      ["mac", hw ? (hw.receiver_mac || "UNKNOWN") : "UNKNOWN"],
+      ["serial", hw ? (hw.serial || hw.transport || "UNKNOWN") : "UNKNOWN"],
+      ["link", L ? (L.transport.open ? "serial open" : "serial closed") : "UNKNOWN"],
+      ["firmware", e ? `${e.firmware.name} · esp-csi ${e.firmware.esp_csi_commit.slice(0, 8)}` : "UNKNOWN"],
     ]);
-    this.renderSense();
+    this.kv("ov-csi", L ? [
+      ["record rate", num(L.stream.rate_hz, (v) => `${v.toFixed(1)} Hz`)],
+      ["valid", num(L.stream.valid_pct, (v) => `${v.toFixed(2)} %`)],
+      ["rssi", L.signal.rssi_last != null
+        ? `${L.signal.rssi_last} dBm (${L.signal.rssi_trend || "trend ?"})` : "UNKNOWN"],
+      ["channel", L.signal.channel != null ? `CH ${L.signal.channel}` : "UNKNOWN"],
+      ["tones", num(L.signal.tones, (v) => `${v} subcarriers`)],
+      ["seq", L.stream.last_seq != null
+        ? `${L.stream.last_seq} · ${L.stream.gaps} gap(s)` : "UNKNOWN"],
+    ] : [
+      ["record rate", "UNKNOWN"], ["valid", "UNKNOWN"], ["rssi", "UNKNOWN"],
+      ["channel", "UNKNOWN"], ["tones", "UNKNOWN"], ["seq", "UNKNOWN"],
+    ]);
+    this.kv("ov-backend", [
+      ["packets (shown)", s ? s.packets : "UNKNOWN"],
+      ["malformed", s ? s.malformed : "UNKNOWN"],
+      ["frame age", s && s.last_frame_age_s != null
+        ? `${s.last_frame_age_s.toFixed(1)} s${s.stale ? " — STALE" : ""}` : "no frames"],
+      ["contract", e ? `v${e.software.contract}` : "UNKNOWN"],
+      ["console", e ? `web ${e.software.rfvision_web}` : "UNKNOWN"],
+    ]);
+    this.kv("ov-research", [
+      ["calibration", `<span class="unknown">UNCALIBRATED</span>`],
+      ["localization", `<span class="unknown">NOT VALIDATED</span>`],
+      ["xai", `<span class="unknown">NOT AVAILABLE</span>`],
+      ["models", `<span class="unknown">NO VALIDATED MODELS</span>`],
+    ]);
+    this.renderFrame();
   },
-  renderSense() {
+  renderFrame() {
     const ev = this._last;
     const snap = this.ctx.store.snapshot();
     if (!ev) {
-      this.kv("ov-sense", [["state", `no frames yet (${snap.state})`]]);
+      this.kv("ov-frame", [["state", `no frames yet (${snap.state})`]]);
       return;
     }
     const p = ev.payload;
-    this.kv("ov-sense", [
+    this.kv("ov-frame", [
       ["source", pillFor(p.source_state || snap.state)],
-      ["presence", `${p.presence} <span class="state-note">(unvalidated)</span>`],
-      ["movement", `${p.movement} <span class="state-note">(unvalidated)</span>`],
-      ["rssi (dBm)", fmtUnknown(p.rssi, (v) => v.toFixed(1))],
       ["seq", ev.seq],
+      ["rssi (dBm)", num(p.rssi, (v) => v.toFixed(0))],
+      ["tones", Array.isArray(p.amplitudes) ? p.amplitudes.length : "UNKNOWN"],
+      ["presence", `${p.presence} <span class="state-note">(NOT VALIDATED)</span>`],
     ]);
   },
 };

@@ -185,7 +185,8 @@ export class RfLinkScene {
     const room = m.widthM ? `${m.widthM.toFixed(1)} m link` : "ROOM: UNKNOWN";
     const pos = (m.positionT === null || m.positionT === undefined)
       ? "pos: —" : `pos: t=${m.positionT.toFixed(2)} ± ${(m.uncertainty ?? 0).toFixed(2)}`;
-    this.hud.textContent = `1 LINK · Y-up m · ${room} · ${pos}`;
+    const extra = m.hudExtra ? ` · ${m.hudExtra}` : "";
+    this.hud.textContent = `1 LINK · Y-up m · ${room} · ${pos}${extra}`;
   }
 
   resize() {

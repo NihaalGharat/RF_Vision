@@ -22,7 +22,7 @@ export const SOURCE_META = {
   LIVE_VERIFIED: { pill: "pill-live", conn: "conn-live", banner: null },
   LIVE_UNVERIFIED: {
     pill: "pill-unverified", conn: "conn-warn",
-    banner: "UNVERIFIED LIVE SOURCE — frames are not validated against a golden capture",
+    banner: "UNVERIFIED LIVE SOURCE — ~3 s session gate not yet passed; frames are not validated",
   },
   OFFLINE_FIXTURE: {
     pill: "pill-sim", conn: "conn-sim",
@@ -38,6 +38,6 @@ export const SOURCE_META = {
   },
   DISCONNECTED: {
     pill: "pill-off", conn: "conn-offline",
-    banner: "DISCONNECTED — no data source. Live CSI blocked by RFVISION-003R.",
+    banner: "DISCONNECTED — no data source selected.",
   },
 };

@@ -41,7 +41,8 @@ export const XaiTab = {
     }
     if (!d.available) {
       status.innerHTML =
-        `<dt>explanation</dt><dd><span class="unknown">NOT AVAILABLE</span></dd>` +
+        `<dt>xai</dt><dd><span class="unknown">NOT AVAILABLE</span></dd>` +
+        `<dt>model</dt><dd><span class="unknown">NO VALIDATED MODEL</span></dd>` +
         `<dt>reason</dt><dd>no validated model, no validated explanation</dd>`;
       drawBars(bars, []);
       caveat.hidden = true;

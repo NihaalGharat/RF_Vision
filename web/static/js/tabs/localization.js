@@ -61,6 +61,7 @@ export const LocalizationTab = {
   renderEst() {
     const snap = this.ctx.store.snapshot();
     this.kv("lc-est", [
+      ["localization", `<span class="unknown">NOT VALIDATED — framework only, no estimator</span>`],
       ["source", pillFor(snap.state)],
       ["position t", fmtUnknown(this._pos, (v) => v.toFixed(3))],
       ["position (m)", fmtUnknown(this._posM, (v) => v.toFixed(2))],

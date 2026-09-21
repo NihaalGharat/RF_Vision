@@ -47,6 +47,10 @@ export const api = {
   streamStop: () => request("POST", "/api/v1/stream/stop"),
   setSource: (mode, path) => request("POST", "/api/v1/source", path ? { mode, path } : { mode }),
   experiment: () => request("GET", "/api/v1/experiment"),
+  live: () => request("GET", "/api/v1/live"),
+  recordStart: (maxSeconds) =>
+    request("POST", "/api/v1/live/record/start", { max_seconds: maxSeconds }),
+  recordStop: () => request("POST", "/api/v1/live/record/stop"),
   calibration: () => request("GET", "/api/v1/calibration"),
   localization: () => request("GET", "/api/v1/localization"),
   xai: () => request("GET", "/api/v1/xai"),

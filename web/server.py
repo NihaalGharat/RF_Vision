@@ -13,7 +13,8 @@ Endpoints (all JSON unless noted):
 - ``GET /api/v1/telemetry`` — adapter/parser counters
 - ``GET /api/v1/stream/status`` + ``POST /api/v1/stream/start|stop``
 - ``POST /api/v1/source {"mode": off|fixture|simulated|live}``
-  (``live`` is refused until RFVISION-003R)
+- ``GET /api/v1/live`` — live session telemetry (or available:false)
+- ``POST /api/v1/live/record/start|stop`` — bounded diagnostic capture
 - ``GET /api/v1/experiment|calibration|localization|xai``
 - ``GET /ws/sensing`` (Upgrade: websocket) — envelope stream + commands:
   ``{"command": "ping"|"stream:start"|"stream:stop"|"set_source", ...}``
@@ -45,13 +46,17 @@ DEFAULT_PORT = 8130
 STALE_AFTER_S = 3.0
 
 #: Validated hardware baseline surfaced by /api/v1/experiment + /hardware.
+#: Receiver identity pinned by RFVISION-003R-C2 (current board).
 BASELINE = {
     "esp32": "ESP32-D0WD-V3 rev 3.1",
+    "receiver": "ESP32-D0WD-V3 Rev 3.1 (current board)",
+    "receiver_mac": "b0:3f:d3:70:20:3c",
     "flash_mb": 4,
     "csi_stack": "Espressif ESP-CSI",
     "router": "Xiaomi Mi Router 4C/R4CM",
     "band": "2.4 GHz",
     "transport": "USB serial",
+    "serial": "/dev/ttyUSB0 @ 921600 8N1",
     "host": "Ubuntu",
 }
 
@@ -91,11 +96,19 @@ class ConsoleState:
         """Switch provider (raises LiveUnavailable/ContractError/FileNotFound)."""
         provider = sources.make_provider(mode, **kwargs)
         with self.lock:
+            old = self.provider
             self.provider = provider
             self.streaming = False
             self.packets = 0
+            self.malformed = 0
             self.last_frame_ts = None
             self.last_seq = None
+        closer = getattr(old, "close", None)  # release serial, if held
+        if callable(closer):
+            try:
+                closer()
+            except Exception:
+                pass
         return self.stream_status()
 
     def stream_status(self) -> Dict[str, Any]:
@@ -242,10 +255,16 @@ class ConsoleHandler(BaseHTTPRequestHandler):
                 uptime_s=time.time() - STATE.started_at,
                 source="rfvision-web", source_state=STATE.effective_state()))
         elif path == "/api/v1/status":
+            live = (STATE.provider if STATE.provider.mode == "live"
+                    else None)
+            stats = live.live_stats() if live is not None else None
             self._json({**contracts.status_payload(
                 connection=("ONLINE" if STATE.streaming else "OFFLINE"),
-                csi_rate=None, packets=STATE.packets,
-                malformed=STATE.malformed, latency_ms=None,
+                csi_rate=(stats["stream"]["rate_hz"] if stats else None),
+                packets=STATE.packets,
+                malformed=(stats["stream"]["malformed"]
+                           if stats else STATE.malformed),
+                latency_ms=None,
                 model="none (heuristic)",
                 source_state=STATE.effective_state()),
                 "stale": STATE.effective_state() == "STALE",
@@ -254,6 +273,21 @@ class ConsoleHandler(BaseHTTPRequestHandler):
             snap = STATE.provider.latest_snapshot()
             self._json({"available": snap is not None, "event": snap})
         elif path == "/api/v1/telemetry":
+            live = (STATE.provider if STATE.provider.mode == "live"
+                    else None)
+            if live is not None:
+                stats = live.live_stats()
+                rejected = dict(stats["parser"]["rejected"])
+                if stats["stream"]["non_csi_lines"]:
+                    rejected["non_csi"] = stats["stream"]["non_csi_lines"]
+                age = stats["stream"]["last_update_age_s"]
+                self._json(contracts.telemetry_payload(
+                    packets=stats["stream"]["valid"],
+                    malformed=stats["stream"]["malformed"],
+                    rejected=rejected, last_seq=stats["stream"]["last_seq"],
+                    last_update=(time.time() - age if age is not None
+                                 else None)))
+                return
             self._json(contracts.telemetry_payload(
                 packets=STATE.packets, malformed=STATE.malformed,
                 rejected={}, last_seq=STATE.last_seq,
@@ -261,18 +295,43 @@ class ConsoleHandler(BaseHTTPRequestHandler):
         elif path == "/api/v1/stream/status":
             self._json(STATE.stream_status())
         elif path == "/api/v1/experiment":
-            self._json(contracts.experiment_payload(
-                session_id="NO_ACTIVE_SESSION",
-                software={"rfvision_web": WEB_VERSION,
-                          "python": platform.python_version(),
-                          "contract": str(contracts.CONTRACT_VERSION)},
-                hardware={**BASELINE, "connection": "UNKNOWN"},
-                firmware=FIRMWARE,
-                geometry={"room_width_m": None, "room_length_m": None,
-                          "configured_default_m": [5.0, 4.0],
-                          "status": "UNCALIBRATED",
-                          "note": "defaults are not measurements"},
-                raw_ref=None, validation="NOT_RUN"))
+            live = (STATE.provider if STATE.provider.mode == "live"
+                    else None)
+            if live is not None:
+                stats = live.live_stats()
+                rec = stats["recording"]
+                self._json(contracts.experiment_payload(
+                    session_id=stats["session_id"],
+                    software={"rfvision_web": WEB_VERSION,
+                              "python": platform.python_version(),
+                              "contract": str(contracts.CONTRACT_VERSION)},
+                    hardware={**BASELINE, "connection":
+                              ("serial open" if stats["transport"]["open"]
+                               else "serial closed/idle")},
+                    firmware=FIRMWARE,
+                    geometry={"room_width_m": None, "room_length_m": None,
+                              "configured_default_m": [5.0, 4.0],
+                              "status": "UNCALIBRATED",
+                              "note": "defaults are not measurements"},
+                    raw_ref=({"path": rec["path"], "bytes": rec["bytes"],
+                              "sha256": rec["sha256"],
+                              "state": "recording" if rec["active"]
+                              else "stopped"}
+                             if rec["path"] else None),
+                    validation="NOT_RUN"))
+            else:
+                self._json(contracts.experiment_payload(
+                    session_id="NO_ACTIVE_SESSION",
+                    software={"rfvision_web": WEB_VERSION,
+                              "python": platform.python_version(),
+                              "contract": str(contracts.CONTRACT_VERSION)},
+                    hardware={**BASELINE, "connection": "UNKNOWN"},
+                    firmware=FIRMWARE,
+                    geometry={"room_width_m": None, "room_length_m": None,
+                              "configured_default_m": [5.0, 4.0],
+                              "status": "UNCALIBRATED",
+                              "note": "defaults are not measurements"},
+                    raw_ref=None, validation="NOT_RUN"))
         elif path == "/api/v1/calibration":
             self._json(contracts.calibration_payload(
                 status="UNCALIBRATED", room_width_m=None,
@@ -288,6 +347,15 @@ class ConsoleHandler(BaseHTTPRequestHandler):
                         "position_m": None}]))
         elif path == "/api/v1/xai":
             self._json(contracts.xai_payload(available=False))
+        elif path == "/api/v1/live":
+            live = (STATE.provider if STATE.provider.mode == "live"
+                    else None)
+            if live is None:
+                self._json({"available": False,
+                            "reason": "live provider not selected "
+                            "(POST /api/v1/source {\"mode\": \"live\"})"})
+            else:
+                self._json(live.live_stats())
         else:
             self._error("not found", 404)
 
@@ -303,6 +371,17 @@ class ConsoleHandler(BaseHTTPRequestHandler):
             kwargs: Dict[str, Any] = {}
             if mode == "fixture" and body.get("path"):
                 kwargs["path"] = str(body["path"])
+            if mode == "live":
+                for key in ("port", "expected_bssid"):
+                    if body.get(key):
+                        kwargs[key] = str(body[key])
+                for key in ("baud", "expected_channel"):
+                    if body.get(key) is not None:
+                        try:
+                            kwargs[key] = int(body[key])
+                        except (TypeError, ValueError):
+                            self._error(f"bad {key}: {body[key]!r}", 400)
+                            return
             try:
                 self._json(STATE.set_source(mode, **kwargs))
             except sources.LiveUnavailable as exc:
@@ -310,6 +389,42 @@ class ConsoleHandler(BaseHTTPRequestHandler):
             except (contracts.ContractError, FileNotFoundError,
                     ValueError) as exc:
                 self._error(str(exc), 400)
+        elif path == "/api/v1/live/record/start":
+            live = (STATE.provider if STATE.provider.mode == "live"
+                    else None)
+            if live is None:
+                self._error("live provider not selected", 409)
+                return
+            body = self._read_json()
+            try:
+                max_s = float(body.get("max_seconds", 10.0))
+            except (TypeError, ValueError):
+                self._error("bad max_seconds", 400)
+                return
+            if not 1.0 <= max_s <= sources.LiveProvider.REC_MAX_SECONDS:
+                self._error(
+                    "max_seconds must be within "
+                    f"[1, {sources.LiveProvider.REC_MAX_SECONDS:g}]", 400)
+                return
+            stamp = time.strftime("%Y%m%dT%H%M%SZ", time.gmtime())
+            target = (Path.cwd() / "research-data" / "live-diag"
+                      / f"live_diag_{stamp}.bin")
+            try:
+                started = live.start_recording(target, max_seconds=max_s)
+            except sources.LiveSerialError as exc:
+                self._error(str(exc), 409)
+                return
+            self._json({"recording": True, "path": started,
+                        "max_seconds": max_s,
+                        "note": "diagnostic only; never sensing evidence"})
+        elif path == "/api/v1/live/record/stop":
+            live = (STATE.provider if STATE.provider.mode == "live"
+                    else None)
+            if live is None:
+                self._error("live provider not selected", 409)
+                return
+            info = live.stop_recording()
+            self._json({"recording": False, "manifest": info})
         else:
             self._error("not found", 404)
 

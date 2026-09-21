@@ -206,11 +206,16 @@ class ProviderTests(unittest.TestCase):
         self.assertEqual(event["payload"]["source_state"], "SIMULATED")
         self.assertFalse(event["payload"]["validated"])
 
-    def test_live_gate_refuses(self):
-        with self.assertRaises(sources.LiveUnavailable):
-            sources.LiveProvider()
-        with self.assertRaises(sources.LiveUnavailable):
-            sources.make_provider("live")
+    def test_live_binds_unverified(self):
+        # RFVISION-009: the live path binds to the validated receiver.
+        # Construction never touches hardware; sessions start UNVERIFIED.
+        provider = sources.LiveProvider(
+            line_source=sources.FakeLineSource([]))
+        self.assertEqual(provider.mode, "live")
+        self.assertEqual(provider.source_state, "LIVE_UNVERIFIED")
+        bound = sources.make_provider(
+            "live", line_source=sources.FakeLineSource([]))
+        self.assertEqual(bound.mode, "live")
         with self.assertRaises(ContractError):
             sources.make_provider("quantum")
 
