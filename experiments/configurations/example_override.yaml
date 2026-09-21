@@ -1,0 +1,11 @@
+# Per-experiment overrides for RF Vision (merge over config/default.yaml)
+# Example: narrower room, stricter presence, noisier link smoothing.
+room_width: 3.2
+room_length: 3.0
+presence_threshold: 0.6
+csi:
+  smoothing: ema
+  smoothing_alpha: 0.35
+features:
+  window_size: 64
+  stride: 8

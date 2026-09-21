@@ -1,0 +1,40 @@
+# RF Vision .gitignore — research code, no raw data, no secrets
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+.pytest_cache/
+.hypothesis/
+logs/
+*.log
+# Research evidence lives OUTSIDE git (see research/datasets/README.md)
+data/
+*.csv
+!docs/reference/example_csi.csv
+# Models/datasets produced locally
+*.pkl
+*.pt
+*.pth
+# Firmware build outputs (built in ESP-IDF, never committed)
+firmware/**/build/
+firmware/**/sdkconfig
+firmware/**/*.bin
+firmware/**/*.elf
+# Unity generated (when the Unity phase starts)
+unity/project/Library/
+unity/project/Temp/
+unity/project/Obj/
+unity/project/Build/
+# Secrets — never commit
+.env
+*password*
+*secret*
+*token*
+*.pem
+# OS / editor
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+*~

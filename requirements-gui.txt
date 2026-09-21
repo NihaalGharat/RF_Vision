@@ -1,0 +1,5 @@
+# GUI: live Qt dashboard (optional; headless pipeline unaffected)
+# NOTE: PyQt6 is GPL/commercial dual-licensed — review before distributing
+# the dashboard binary. The capture/inference pipeline needs no GUI.
+-r requirements-base.txt
+PyQt6>=6.6

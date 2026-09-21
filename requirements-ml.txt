@@ -1,0 +1,4 @@
+# Deep learning: PyTorch MLP presence/position (optional, CPU is enough)
+# Without torch, ai/training/train.py runs KNN/RF baselines only (loud warning).
+-r requirements-base.txt
+torch>=2.2

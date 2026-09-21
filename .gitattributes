@@ -1,0 +1,7 @@
+# Normalize line endings; keep firmware blobs byte-exact
+* text=auto
+*.ino text eol=lf
+*.c text eol=lf
+*.h text eol=lf
+*.csv text eol=lf
+*.html text eol=lf
