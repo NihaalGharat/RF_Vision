@@ -181,11 +181,11 @@ uses config defaults; report evidence (screenshot, probes) in `/tmp`
 
 ## 16. Git commit
 
-- Phase commit: `AWAITING-COMMIT` (filled below after the quality gate).
-- (Recorder pattern as in 002: hash filled in a follow-up commit; the
-  prescribed single message "feat: validate live CSI foundation…" was NOT
-  used — it would misrepresent a FAILED golden test. Actual message names
-  the failure explicitly.)
+- Phase commit: `1ff91e4` ("rfvision-003: reproducibility baseline,
+  GUI/dry-run PASS; live-CSI golden test FAILs (anomalous serial stream,
+  0 valid records)"), recorded here in the follow-up commit (002 pattern).
+- The prescribed message "feat: validate live CSI foundation…" was NOT
+  used — it would misrepresent a FAILED golden test.
 
 ## 17. Next phase recommendation
 
