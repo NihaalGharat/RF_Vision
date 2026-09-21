@@ -148,7 +148,7 @@ pollution, no raw bytes in git (`.log/.npz/.csv` absent — `.gitignore`-consist
 - Record commit (H2): `docs: record RFVISION-006 commit hash in consolidation report`
   (this file with H1 filled in) — follows the repo's 002 pattern
   (RFVISION-003 §16, foundation §21).
-- H1: `FILL_H1` · H2: `FILL_H2` (filled immediately post-commit; see `git log --oneline -3`).
+- H1: `ac09bd7` · H2: (this record commit — see `git log --oneline -3`).
 - Remote: none (local-only; GitHub policy remains user-deferred per RFVISION-003 §18).
 
 ## 16. Unresolved items
