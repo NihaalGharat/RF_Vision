@@ -108,9 +108,9 @@ Downloads retirement. Project has no active dependency on it.
 ## 14. Git commit
 
 - H1 `docs: consolidate research data under RF Vision` (scope per §7-staging):
-  `PENDING_H1`.
+  `991795f`.
 - H2 `docs: record RFVISION-008 commit hash in consolidation report`
-  (this file with H1 filled): `PENDING_H2` (repo 002-pattern).
+  (this file with H1 filled): (this record commit — see `git log --oneline -3`).
 - Verify: `git log --oneline -3`; tree clean at close; no remote (user-deferred).
 
 ## 15. Final directory structure
