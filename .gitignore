@@ -8,8 +8,14 @@ venv/
 .hypothesis/
 logs/
 *.log
-# Research evidence lives OUTSIDE git (see research/datasets/README.md)
+# Research evidence lives OUTSIDE git (see research-data/README.md)
 data/
+# NOTE: ignore directory CONTENTS (not the dir itself) so the two
+# negations below can re-include the tracked manifest + readme —
+# git cannot re-include paths under an excluded parent directory.
+research-data/*
+!research-data/MANIFEST.md
+!research-data/README.md
 *.csv
 !docs/reference/example_csi.csv
 # Models/datasets produced locally

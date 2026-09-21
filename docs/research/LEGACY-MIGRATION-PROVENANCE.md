@@ -109,3 +109,15 @@ External manifest: `~/RFVision-Research-Data/legacy-csi-sense-001/MANIFEST.md` +
 - Password value → `REDACTED`: 4 occurrences (`firmware_versions.json` ×1, `CSI-VERIFY-001_FINAL_REPORT.md` ×2, `FINAL-FOLDER-AUDIT-001.md` ×1).
 - `hardware_identity.json`: `security` wording → `"WPA2-PSK (method on file, value not migrated)"`.
 - No other byte changes. BSSID/MAC/SSID/gateway retained deliberately (reproducibility IDs).
+
+## 4. RFVISION-008 relocation (2026-09-21)
+
+- Old external root `~/RFVision-Research-Data/` → new canonical location
+  `research-data/` inside `~/Desktop/RF Vision`
+  (Git-ignored; only `research-data/MANIFEST.md` + `research-data/README.md` tracked).
+- All 115 files copied byte-identical (115/115 SHA-256 match, 131,158,780 B);
+  R1/R2/R3 + RFVISION-003 capture (`c64e5a00…f352df`, 57,081,856 B) re-verified;
+  raw captures read-only (`444`). Full per-file table: `research-data/MANIFEST.md`.
+- `~/RFVision-Research-Data/` retained as a dormant second copy (independent
+  backup, no active dependency). Legacy Downloads archive retired in RFVISION-008
+  after 62/62 content verification.

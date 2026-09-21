@@ -48,10 +48,26 @@ Canonical data interfaces: `docs/architecture/RFVISION_DATA_SCHEMA.md`.
 | `tests/` | Unit + integration + synthetic generators + fixtures |
 | `docs/` | Architecture, hardware, software, research, third-party, background |
 | `research/` | Dataset manifests, reports, publication staging (no raw data in git) |
+| `research-data/` | Canonical research data: raw CSI + derived sets (**Git-ignored**; see below) |
 
 > `dsp/` implements the `signal/` block of the target architecture. It was
 > renamed because a top-level `signal` package irreversibly shadows Python's
 > stdlib `signal` module (breaks joblib/pytest). See `dsp/README.md`.
+
+## Research data
+
+Location: `research-data/`
+
+"Raw and large derived research datasets are intentionally excluded
+from Git history."
+
+- `research-data/MANIFEST.md` — every dataset file with size, SHA-256,
+  experiment/provenance, source and original location (tracked in Git).
+- Verify with `sha256sum -c <file>.sha256` sidecars, or the full-tree check
+  in `research-data/README.md`.
+- Reproduce analysis from the read-only raw captures using the current
+  `csi/` + `dsp/` chain; technique reference (not active code) is in
+  `docs/research/legacy/TOOL-REFERENCE.md`.
 
 ## Setup (Linux)
 
