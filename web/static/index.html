@@ -1,0 +1,60 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>RF Vision — Research Console</title>
+<link rel="stylesheet" href="/static/css/tokens.css">
+<link rel="stylesheet" href="/static/css/app.css">
+<script type="importmap">
+{"imports": {
+  "three": "/static/vendor/three.module.js",
+  "three/addons/": "/static/vendor/"
+}}
+</script>
+</head>
+<body>
+<div id="source-banner" class="source-banner" role="status" aria-live="polite" hidden></div>
+<header class="topbar">
+  <div class="brand">
+    <span class="brand-mark">RF</span>
+    <div class="brand-text">
+      <strong>RF VISION</strong>
+      <small>CSI research console · <span id="contract-version">contract v1</span></small>
+    </div>
+  </div>
+  <div class="topbar-status">
+    <span id="conn-dot" class="conn-dot conn-offline" title="connection"></span>
+    <span id="conn-label" class="conn-label">DISCONNECTED</span>
+    <span id="clock" class="clock">--:--:--</span>
+  </div>
+</header>
+<nav class="tabs" role="tablist" aria-label="Console sections">
+  <button class="tab active" role="tab" data-tab="overview" aria-selected="true">Overview</button>
+  <button class="tab" role="tab" data-tab="sensing" aria-selected="false">Sensing</button>
+  <button class="tab" role="tab" data-tab="rffield" aria-selected="false">RF Field</button>
+  <button class="tab" role="tab" data-tab="localization" aria-selected="false">Localization</button>
+  <button class="tab" role="tab" data-tab="xai" aria-selected="false">XAI</button>
+  <button class="tab" role="tab" data-tab="experiments" aria-selected="false">Experiments</button>
+  <button class="tab" role="tab" data-tab="hardware" aria-selected="false">Hardware</button>
+  <button class="tab" role="tab" data-tab="models" aria-selected="false" disabled title="Reserved until validated">Models 🔒</button>
+  <button class="tab" role="tab" data-tab="settings" aria-selected="false">Settings</button>
+</nav>
+<main id="panels">
+  <section id="panel-overview" class="panel active" role="tabpanel" aria-label="Overview"></section>
+  <section id="panel-sensing" class="panel" role="tabpanel" aria-label="Sensing" hidden></section>
+  <section id="panel-rffield" class="panel" role="tabpanel" aria-label="RF Field" hidden></section>
+  <section id="panel-localization" class="panel" role="tabpanel" aria-label="Localization" hidden></section>
+  <section id="panel-xai" class="panel" role="tabpanel" aria-label="XAI" hidden></section>
+  <section id="panel-experiments" class="panel" role="tabpanel" aria-label="Experiments" hidden></section>
+  <section id="panel-hardware" class="panel" role="tabpanel" aria-label="Hardware" hidden></section>
+  <section id="panel-models" class="panel" role="tabpanel" aria-label="Models" hidden></section>
+  <section id="panel-settings" class="panel" role="tabpanel" aria-label="Settings" hidden></section>
+</main>
+<footer class="foot">
+  <span id="provenance-line">provenance: loading…</span>
+  <span>RF Vision research instrument — estimates are not conclusions</span>
+</footer>
+<script type="module" src="/static/js/app.js"></script>
+</body>
+</html>

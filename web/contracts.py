@@ -1,0 +1,310 @@
+"""RF Vision web-interface data contracts (RFVISION-005).
+
+RF Vision native, stdlib only. Defines the JSON payloads served by
+``web/server.py`` and consumed by ``web/static/js/*``. Every payload schema
+derives from ``docs/architecture/RFVISION_DATA_SCHEMA.md`` and
+``unity/integration/MESSAGE_FORMATS.md`` — RuView contributed only the
+architectural concept (grouped status/sensing/stream endpoints + explicit
+source-state provenance; see ``docs/third_party/RUVIEW_*.md``).
+
+Source transparency (mandatory): every live-data view carries one of
+``SOURCE_STATES``. Simulated/fixture data must never be presentable as live.
+"""
+
+from __future__ import annotations
+
+from typing import Any, Dict, List, Optional
+
+from realtime.protocol.event_envelope import (
+    EVENT_TYPES,
+    EventError,
+    make_event,
+    parse_event,
+)
+
+__all__ = [
+    "CONTRACT_VERSION",
+    "SOURCE_STATES",
+    "ContractError",
+    "require_source_state",
+    "health_payload",
+    "status_payload",
+    "sensing_snapshot_payload",
+    "telemetry_payload",
+    "stream_status_payload",
+    "experiment_payload",
+    "calibration_payload",
+    "localization_payload",
+    "xai_payload",
+    "validate_envelope",
+]
+
+#: Contract version served at GET /api/v1/health (bump on payload change).
+CONTRACT_VERSION = 1
+
+#: Allowed data-provenance states (operation §6). No other value may be
+#: emitted or accepted.
+SOURCE_STATES = (
+    "LIVE_VERIFIED",
+    "LIVE_UNVERIFIED",
+    "OFFLINE_FIXTURE",
+    "SIMULATED",
+    "STALE",
+    "DISCONNECTED",
+)
+
+#: States in which frames may animate as if live.
+LIVE_LIKE_STATES = ("LIVE_VERIFIED", "LIVE_UNVERIFIED")
+
+#: States that must ALWAYS carry a visible non-live badge.
+NON_LIVE_STATES = (
+    "OFFLINE_FIXTURE",
+    "SIMULATED",
+    "STALE",
+    "DISCONNECTED",
+)
+
+
+class ContractError(ValueError):
+    """Raised when a payload violates its contract."""
+
+
+def require_source_state(state: str) -> str:
+    """Validate a source-state token (raises ContractError)."""
+    if state not in SOURCE_STATES:
+        raise ContractError(f"unknown source state: {state!r}")
+    return state
+
+
+def _num(value: Any, name: str, allow_none: bool = False) -> Optional[float]:
+    if value is None and allow_none:
+        return None
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        raise ContractError(f"{name} must be a number, got {value!r}")
+    return float(value)
+
+
+def health_payload(*, status: str, version: str, uptime_s: float,
+                   source: str, source_state: str,
+                   contract: int = CONTRACT_VERSION) -> Dict[str, Any]:
+    """GET /api/v1/health — liveness + provenance."""
+    if status not in ("ok", "degraded"):
+        raise ContractError(f"bad health status: {status!r}")
+    return {
+        "status": status,
+        "version": str(version),
+        "uptime_s": _num(uptime_s, "uptime_s"),
+        "contract": int(contract),
+        "source": str(source),
+        "source_state": require_source_state(source_state),
+    }
+
+
+def status_payload(*, connection: str, csi_rate: Optional[float],
+                   packets: int, malformed: int,
+                   latency_ms: Optional[float], model: str,
+                   source_state: str) -> Dict[str, Any]:
+    """GET /api/v1/status — ``system.status`` payload + provenance."""
+    if connection not in ("ONLINE", "OFFLINE"):
+        raise ContractError(f"bad connection: {connection!r}")
+    return {
+        "connection": connection,
+        "csi_rate": _num(csi_rate, "csi_rate", allow_none=True),
+        "packets": int(packets),
+        "malformed": int(malformed),
+        "latency_ms": _num(latency_ms, "latency_ms", allow_none=True),
+        "model": str(model),
+        "source_state": require_source_state(source_state),
+    }
+
+
+def sensing_snapshot_payload(*, presence: str, presence_prob: Optional[float],
+                             movement: str, movement_prob: Optional[float],
+                             position: Optional[float],
+                             position_m: Optional[float],
+                             confidence: Optional[float],
+                             rssi: Optional[float] = None,
+                             amplitudes: Optional[List[float]] = None,
+                             phases: Optional[List[float]] = None,
+                             validated: bool = False) -> Dict[str, Any]:
+    """GET /api/v1/sensing/latest payload.
+
+    Presence/activity are UI FIELDS ONLY until experimentally validated —
+    ``validated=False`` (default) obliges the UI to render them as
+    unvalidated estimates, never conclusions.
+    """
+    if presence not in ("PERSON", "EMPTY", "UNKNOWN"):
+        raise ContractError(f"bad presence: {presence!r}")
+    if movement not in ("MOVING", "STATIC", "UNKNOWN"):
+        raise ContractError(f"bad movement: {movement!r}")
+    for name, val in (("presence_prob", presence_prob),
+                      ("movement_prob", movement_prob),
+                      ("confidence", confidence)):
+        if val is not None:
+            val = _num(val, name)
+            if not 0.0 <= val <= 1.0:
+                raise ContractError(f"{name} outside [0,1]: {val}")
+    if position is not None and not 0.0 <= float(position) <= 1.0:
+        raise ContractError(f"position outside [0,1]: {position!r}")
+    if amplitudes is not None and not all(
+            isinstance(v, (int, float)) for v in amplitudes):
+        raise ContractError("amplitudes must be numbers")
+    if phases is not None and not all(
+            isinstance(v, (int, float)) for v in phases):
+        raise ContractError("phases must be numbers")
+    return {
+        "presence": presence,
+        "presence_prob": presence_prob,
+        "movement": movement,
+        "movement_prob": movement_prob,
+        "position": position,
+        "position_m": position_m,
+        "confidence": confidence,
+        "rssi": rssi,
+        "amplitudes": amplitudes,
+        "phases": phases,
+        "validated": bool(validated),
+    }
+
+
+def telemetry_payload(*, packets: int, malformed: int,
+                      rejected: Dict[str, int],
+                      last_seq: Optional[int],
+                      last_update: Optional[float]) -> Dict[str, Any]:
+    """GET /api/v1/telemetry — adapter/parser counters."""
+    if not isinstance(rejected, dict):
+        raise ContractError("rejected must be an object")
+    return {
+        "packets": int(packets),
+        "malformed": int(malformed),
+        "rejected": {str(k): int(v) for k, v in rejected.items()},
+        "last_seq": last_seq,
+        "last_update": last_update,
+    }
+
+
+def stream_status_payload(*, running: bool, mode: str,
+                          source_state: str) -> Dict[str, Any]:
+    """GET /api/v1/stream/status + POST start/stop responses."""
+    if mode not in ("fixture", "simulated", "live", "off"):
+        raise ContractError(f"bad stream mode: {mode!r}")
+    return {
+        "running": bool(running),
+        "mode": mode,
+        "source_state": require_source_state(source_state),
+    }
+
+
+def experiment_payload(*, session_id: str, software: Dict[str, str],
+                       hardware: Dict[str, Any], firmware: Dict[str, Any],
+                       geometry: Dict[str, Any],
+                       raw_ref: Optional[Dict[str, Any]],
+                       validation: str) -> Dict[str, Any]:
+    """GET /api/v1/experiment — session provenance (UNKNOWN stays UNKNOWN)."""
+    if validation not in ("NOT_RUN", "PASS", "FAIL", "INCONCLUSIVE"):
+        raise ContractError(f"bad validation: {validation!r}")
+    return {
+        "session_id": str(session_id),
+        "software": dict(software),
+        "hardware": dict(hardware),
+        "firmware": dict(firmware),
+        "geometry": dict(geometry),
+        "raw_ref": raw_ref,
+        "validation": validation,
+    }
+
+
+def calibration_payload(*, status: str, room_width_m: Optional[float],
+                        room_length_m: Optional[float],
+                        movement_threshold: Optional[float],
+                        calibrated_at: Optional[float],
+                        method: str = "guided") -> Dict[str, Any]:
+    """GET /api/v1/calibration — calibration state."""
+    if status not in ("CALIBRATED", "UNCALIBRATED", "STALE"):
+        raise ContractError(f"bad calibration status: {status!r}")
+    return {
+        "status": status,
+        "room_width_m": room_width_m,
+        "room_length_m": room_length_m,
+        "movement_threshold": movement_threshold,
+        "calibrated_at": calibrated_at,
+        "method": method,
+    }
+
+
+def localization_payload(*, frame: str, position: Optional[float],
+                         position_m: Optional[float], raw: Optional[float],
+                         uncertainty: Optional[float],
+                         room_width_m: Optional[float],
+                         sync: str, nodes: List[Dict[str, Any]]) -> Dict[str, Any]:
+    """GET /api/v1/localization — 1-D link only (2-D/3-D reserved)."""
+    if frame != "link-1d":
+        raise ContractError("only frame 'link-1d' is defined")
+    if sync not in ("NONE", "UNSYNCED", "SYNCED"):
+        raise ContractError(f"bad sync: {sync!r}")
+    if position is not None and not 0.0 <= float(position) <= 1.0:
+        raise ContractError(f"position outside [0,1]: {position!r}")
+    if uncertainty is not None and float(uncertainty) < 0:
+        raise ContractError("uncertainty must be >= 0")
+    return {
+        "frame": frame,
+        "position": position,
+        "position_m": position_m,
+        "raw": raw,
+        "uncertainty": uncertainty,
+        "room_width_m": room_width_m,
+        "sync": sync,
+        "nodes": list(nodes),
+    }
+
+
+def xai_payload(*, available: bool, method: Optional[str] = None,
+                caveats: Optional[str] = None,
+                scores: Optional[Dict[str, float]] = None,
+                top_k: Optional[List[str]] = None) -> Dict[str, Any]:
+    """GET /api/v1/xai — NOT AVAILABLE until a validated explanation exists.
+
+    When ``available`` is False the UI must render NOT AVAILABLE; scores
+    must never be fabricated.
+    """
+    if not available:
+        return {"available": False, "status": "NOT AVAILABLE"}
+    if method not in ("rf_impurity", "permutation"):
+        raise ContractError(f"bad XAI method: {method!r}")
+    if not caveats:
+        raise ContractError("validated explanations must carry caveats")
+    return {
+        "available": True,
+        "method": method,
+        "caveats": caveats,
+        "scores": dict(scores or {}),
+        "top_k": list(top_k or []),
+    }
+
+
+def validate_envelope(text: str) -> Dict[str, Any]:
+    """Validate a WS/event-bus message envelope (raises ContractError).
+
+    Accepts the native ``RealtimeEvent`` envelope; additionally requires a
+    ``source_state`` member inside the payload for stream-carried events so
+    the UI can never render a frame without provenance.
+    """
+    try:
+        obj = parse_event(text)
+    except EventError as exc:
+        raise ContractError(str(exc)) from exc
+    if obj["type"] in ("sensing.snapshot", "localization.update",
+                       "system.status"):
+        state = obj["payload"].get("source_state")
+        if state not in SOURCE_STATES:
+            raise ContractError(
+                f"{obj['type']} payload missing valid source_state")
+    return obj
+
+
+def wrap_event(event_type: str, payload: Dict[str, Any], *,
+               source: str = "rfvision-web", seq: int = 0) -> Dict[str, Any]:
+    """Build a validated outgoing event (raises ContractError/EventError)."""
+    if event_type not in EVENT_TYPES:
+        raise ContractError(f"unknown event type: {event_type!r}")
+    return make_event(event_type, payload, source=source, seq=seq)

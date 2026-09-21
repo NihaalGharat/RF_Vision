@@ -72,3 +72,35 @@ copyright notices.
   repository is included in RF Vision.** Design facts studied (input shapes,
   MQTT grouping pattern, heatmap GUI pattern) are summarized in
   `docs/third_party/CSI_SENSING_STUDY_NOTES.md` as research notes only.
+
+## 5. ruvnet/RuView — MIT License (UI/architecture patterns + three.js)
+
+- Repository: https://github.com/ruvnet/RuView
+- Copyright (c) 2024 rUv. Commit: `dd02efe2fe129ae8068e9b805ea35aaa660e47dd`
+  (`main`, 2026-09-16; audited 2026-09-21, see
+  `docs/third_party/RUVIEW_IMPLEMENTATION_PROVENANCE.md`).
+- In RF Vision: `web/static/js/*` are RF Vision-native implementations
+  (no copied lines) of audited RuView architectural patterns — tab
+  lifecycle (`ui/components/TabManager.js`), service layer
+  (`ui/config/api.config.js`, `ui/services/{api,websocket,health,stream,
+  sensing}.service.js`), source-transparency discipline
+  (`ui/utils/{data-source-banner,connection-status,backend-detector}.js`,
+  `provenance.rs`), scene-graph layering (`ui/components/{scene,
+  environment,gaussian-splats,signal-viz,dashboard-hud}.js`), custom-canvas
+  2D viz (`ui/utils/pose-renderer.js`), seeded demo scenarios
+  (`ui/observatory/js/demo-data.js`), `sensing_update` envelope field
+  groups (`v2/.../sensing-server/src/{types.rs,main.rs}`); `web/server.py`
+  endpoint layout follows their `/health/*`, `/api/v1/*`, `/ws/sensing`
+  grouping with RF Vision-native contracts; `web/ws.py` heartbeat/backoff
+  discipline follows their reconnect design (clean implementation).
+  Per-component decisions: `docs/architecture/
+  RUVIEW_TO_RFVISION_COMPONENT_MAP.md`.
+- Vendored: `web/static/vendor/three.module.js` + `web/static/vendor/
+  OrbitControls.js` (three.js r160, MIT © Three.js Authors — upstream
+  project, same version family RuView loads via CDN; fetched from unpkg,
+  license header retained). See `docs/software/THREEJS_VERSION.md`.
+- Modifications: all pattern implementations rewritten against RF Vision
+  contracts (`web/contracts.py`); no RuView source lines, weights,
+  assets, firmware, or backend code included.
+- License text: MIT (upstream `LICENSE`; obligations: retain
+  `Copyright (c) 2024 rUv` notice — recorded here).

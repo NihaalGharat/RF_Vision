@@ -1,0 +1,8 @@
+{
+  "generator": "tools/build_offline_fixture.py",
+  "seed": 7,
+  "frames": 120,
+  "created_utc": "2026-09-21T16:40:38Z",
+  "sha256": "0f87b219b87e0be2293acff2004573f72dbc4ebfeb415303952527f4b4f147f5",
+  "label": "OFFLINE_FIXTURE \u2014 synthetic via real adapter; never sensing evidence"
+}
