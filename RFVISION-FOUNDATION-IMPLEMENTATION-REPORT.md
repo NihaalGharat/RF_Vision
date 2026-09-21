@@ -128,8 +128,10 @@ decision, `requirements.lock` freeze.
 
 ## 21. Git commit hash
 
-- Foundation commit: `COMMIT_HASH_PLACEHOLDER`
-- (Recorder commit, if any, follows in history.)
+- Foundation commit: `1a8fde61e1645f7385f048a302de8190e0300c4c`
+  ("feat: establish RF Vision integrated research foundation", 156 files).
+- Recorder commit: this report's hash field filled in the follow-up commit
+  (see history).
 
 ## 22. Recommended next development phase
 
