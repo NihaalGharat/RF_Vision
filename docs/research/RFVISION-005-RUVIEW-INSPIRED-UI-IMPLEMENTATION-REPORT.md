@@ -128,6 +128,6 @@ adapter acceptance passes on real frames.
 
 ## 15. Git commit
 
-Phase commit: `AWAITING-COMMIT` (single message
-"feat: add RuView-inspired RF Vision research interface foundation";
-recorded below in the follow-up commit per 002/003 pattern).
+Phase commit: `106f16c` ("feat: add RuView-inspired RF Vision research
+interface foundation"), recorded here in the follow-up commit per the
+002/003 pattern.
