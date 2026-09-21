@@ -196,6 +196,6 @@ locked.
 
 ## 14. Commit
 
-`feat: connect live CSI stream to RF Vision console` (+ hash-record
-follow-up per repo precedent). No raw, screenshots, caches,
+`0bfb241 feat: connect live CSI stream to RF Vision console` (plus this
+hash-record follow-up per repo precedent). No raw, screenshots, caches,
 credentials, or generated artifacts committed.
