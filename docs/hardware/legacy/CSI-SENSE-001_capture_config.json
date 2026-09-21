@@ -1,0 +1,69 @@
+{
+  "schema_version": "1.0",
+  "study_id": "CSI-SENSE-001",
+  "baud": 921600,
+  "port": "/dev/ttyUSB0",
+  "proven_baud": 921600,
+  "config_send_frequency": 100,
+  "expected_rate_hz_wall": 102,
+  "expected_rate_hz_chip": 141,
+  "median_inter_arrival_us": 5985,
+  "proven_len": 128,
+  "proven_subcarriers": 64,
+  "sig_len_observed": 83,
+  "channel": 1,
+  "freq_mhz": 2412,
+  "bandwidth": "HT20 20MHz",
+  "secondary_channel": 0,
+  "router_bssid": "8C:53:C3:5B:E1:59",
+  "router_ssid": "Nihaal",
+  "esp32_mac": "f4:65:0b:56:0e:18",
+  "capure_script": "tools/csi_capture/capture_csi_sense.py",
+  "capture_script_version": "1.0",
+  "capture_method": "serial.Serial(port,921600, timeout=1) read(4096) -> wb no parsing/filtering during capture",
+  "event_logger": "tools/csi_capture/event_logger.py — sidecar wall_clock_ns + chip_seq sync 100ms tolerance",
+  "raw_invariant": "RAW written once binary then chmod a-w; never modified; parser handles glued fragments via re.finditer",
+  "trial_duration_s": {
+    "A_EMPTY": 90,
+    "B_ENTER": 12,
+    "C_STATIONARY": 60,
+    "D_WALKING": 35,
+    "E_EXIT": 12,
+    "F_RECOVERY": 90,
+    "inter_trial_rest": 30,
+    "total": 310,
+    "note": "D walking 2 traversals ~15s each; reference speed 0.8-1.2 m/s target only (§2.D)"
+  },
+  "valid_trial_criteria": {
+    "missing_seq_le": "1%",
+    "malformed_le": "0.5%",
+    "no_gap_gt_500ms": true,
+    "no_extra_human_during_A_F_C": true,
+    "all_events_present": "including walk_start/walk_end",
+    "channel_1_ge": "99%",
+    "bssid_stable_ge": "99%",
+    "len_128_ge": "99%",
+    "receiver_not_moved": true,
+    "walking_speed_not_gate": "speed outside 0.8-1.2 does NOT invalidate; logged as covariate"
+  },
+  "backup": {
+    "rule": "NO HUMAN DATA COLLECTION UNTIL PERSISTENT BACKUP HAS BEEN VERIFIED (§5.5)",
+    "tool": "tools/csi_capture/backup_verify.py",
+    "checks": ["lsblk", "df -hT", "findmnt", "write_test SHA round-trip", "free >=5GB", "not /cow/tmp/tmpfs/overlay"],
+    "per_trial": "copy (not move) raw/metadata/events/env/analysis + sha256sum -c + backup_verified flag"
+  },
+  "analysis": {
+    "parse": "tools/csi_analysis/parse_csi.py — proven regex, glued handling",
+    "features": "tools/csi_analysis/features.py — amp sqrt(I2+Q2), phase atan2 detrended",
+    "baseline": "tools/csi_analysis/baseline_model.py — mu sigma cov deviation + walking covariate",
+    "pca": "tools/csi_analysis/pca_spectrogram.py — PCA on baseline, STFT 2s 90% overlap",
+    "plots": "tools/csi_analysis/temporal_plots.py — overlay A/C/D/F + events + speed",
+    "stats": "tools/csi_analysis/statistical_tests.py — Q1..Q6 distribution-dependent FDR effect-size",
+    "config": "tools/csi_analysis/analysis_config.json"
+  },
+  "versions": {
+    "python": "3.14.4",
+    "pyserial": "3.5",
+    "esptool": "4.12.0"
+  }
+}

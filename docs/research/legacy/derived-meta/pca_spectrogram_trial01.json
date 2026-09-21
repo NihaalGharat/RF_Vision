@@ -1,0 +1,72 @@
+{
+  "schema_version": "1.0",
+  "study_id": "CSI-SENSE-001",
+  "version": "1.0",
+  "input": {
+    "features": "/home/ubuntu/Desktop/RF Vision Files/CSI-SENSE-001/analysis/trial_01/features_trial01.npz",
+    "sha256": "e6c1891c2e3d88c3214b47812befb932fe011af24e008caa713b47bd1ba32d89",
+    "packets": 30261,
+    "subcarriers": 64,
+    "baseline_n": 9000
+  },
+  "pca": {
+    "n_components": 5,
+    "explained_variance": [
+      0.345636045189365,
+      0.3190326608824659,
+      0.16510611835026104,
+      0.06884025304045754,
+      0.0501061364748591
+    ],
+    "cumulative_variance": [
+      0.345636045189365,
+      0.6646687060718309,
+      0.8297748244220919,
+      0.8986150774625494,
+      0.9487212139374085
+    ],
+    "explained_pc1_pct": 34.5636045189365,
+    "top_subcarriers": [
+      63,
+      62,
+      61,
+      60,
+      48,
+      47,
+      59,
+      46,
+      14,
+      13
+    ],
+    "null_excluded": false,
+    "note": "Fitted on baseline only; which subcarriers strongest (\u00a78 Q5)"
+  },
+  "spectrogram": {
+    "fs": 100.0,
+    "window_s": 2.0,
+    "overlap": 0.9,
+    "f_shape": [
+      101
+    ],
+    "t_shape": [
+      1505
+    ],
+    "Sxx_shape": [
+      101,
+      1505
+    ],
+    "freq_bins": 101,
+    "time_frames": 1505,
+    "signal": "PC1 projection (or mean_amp)",
+    "note": "Exploratory 0.5\u20132 Hz energy expected for walking (\u00a77.4)"
+  },
+  "walking": null,
+  "output": {
+    "npz": "/home/ubuntu/Desktop/RF Vision Files/CSI-SENSE-001/analysis/trial_01/pca_spectrogram_trial01.npz",
+    "sha256": "8e4ef703c9dd7a643c699dae6c3638bd223406a1641b77a669be5b4e32f2b0bf"
+  },
+  "reproducibility": {
+    "timestamp_UTC": "2026-09-06T23:12:31.101611+00:00",
+    "command": "/home/ubuntu/tools/csi_analysis/pca_spectrogram.py --features /home/ubuntu/Desktop/RF Vision Files/CSI-SENSE-001/analysis/trial_01/features_trial01.npz --baseline-indices 0:9000 --out-dir /home/ubuntu/Desktop/RF Vision Files/CSI-SENSE-001/analysis/trial_01"
+  }
+}

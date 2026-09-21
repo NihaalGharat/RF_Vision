@@ -1,0 +1,15 @@
+{
+  "schema_version": "1.0",
+  "study_id": "CSI-SENSE-001",
+  "trial": "01",
+  "environment": {
+    "room_dimensions": "UNKNOWN",
+    "router": {"position": "near West wall", "exact_coordinates": "UNKNOWN", "height": "UNKNOWN", "bssid": "8C:53:C3:5B:E1:59", "ssid": "Nihaal", "channel": 1, "freq_mhz": 2412, "bandwidth": "HT20 20MHz"},
+    "esp32": {"position": "near East wall", "height": "approximately 0.55 m", "exact_coordinates": "UNKNOWN", "antenna_orientation": "UNKNOWN", "chip": "ESP32-D0WD-V3 rev3.1", "mac": "f4:65:0b:56:0e:18", "port": "/dev/ttyUSB0"},
+    "walking_path": {"start": "doorway/opening area shown in setup photo", "end": "central/lower floor area shown in setup photo", "description": "person walks across the room between router and ESP32", "LOS_crossing": "UNKNOWN", "subject": "single subject walks between router and ESP32"},
+    "controls": {"subject_outside_during_EMPTY": true, "esp32_fixed": true, "router_unchanged": true, "host_AC": true, "doors_windows_controlled": true, "fans_AC_off_where_practical": true, "avoid_downloads": true, "avoid_RF_change": true},
+    "disturbances": "none reported; ambient Wi-Fi neighbors present (see nmcli) but not intentionally changed"
+  },
+  "firmware": {"esp_idf": "v5.4.4 296b6eab9445fd720e71aecab961e2d3fbca9944", "esp_csi": "8633d67152db2808f141cc1595970aa9cf406045", "example": "examples/get-started/csi_recv_router", "baud": 921600, "firmware_modified": false, "note": "NO ESP32 FIRMWARE WAS MODIFIED DURING THIS PILOT."},
+  "volatile": "DATA IS CURRENTLY STORED ON VOLATILE UBUNTU LIVE STORAGE."
+}

@@ -1,0 +1,48 @@
+{
+  "schema_version": "1.0",
+  "study_id": "CSI-SENSE-001",
+  "version": "1.0",
+  "input": {
+    "features": "/home/ubuntu/Desktop/RF Vision Files/CSI-SENSE-001/analysis/trial_01/features_trial01.npz",
+    "sha256": "e6c1891c2e3d88c3214b47812befb932fe011af24e008caa713b47bd1ba32d89",
+    "packets": 30261,
+    "subcarriers": 64,
+    "baseline_n": 9000
+  },
+  "baseline": {
+    "mu_mean": 20.11480112171612,
+    "sigma_mean": 2.6498179006119553,
+    "intra_var": {
+      "n_windows": 3,
+      "inter_window_mean_distances": [
+        16.25995727736416,
+        16.354796744831763,
+        8.80047602820918
+      ],
+      "mean_dist": 13.80507668346837,
+      "window_means_stdev_per_subcarrier_mean": 0.823308974077386
+    },
+    "epsilon": 1e-06
+  },
+  "deviation": {
+    "amp_deviation_mean": 28.96337509912838,
+    "amp_deviation_median": 28.36220139875454,
+    "amp_deviation_p95_baseline": 36.010219334392566,
+    "mahalanobis_mean": 9.258941213825604,
+    "mean_abs_z_mean": 3791152.745225889,
+    "window": {
+      "window_s": 0.5,
+      "window_stds_mean": 1.6335358836845293
+    }
+  },
+  "walking": null,
+  "output": {
+    "model_npz": "/home/ubuntu/Desktop/RF Vision Files/CSI-SENSE-001/analysis/trial_01/baseline_model_trial01.npz",
+    "sha256": "58fdcfec1b465a597944158224495850cae205b32101c3cebb9674ce346d0801"
+  },
+  "reproducibility": {
+    "timestamp_UTC": "2026-09-06T23:12:29.727666+00:00",
+    "command": "/home/ubuntu/tools/csi_analysis/baseline_model.py --features /home/ubuntu/Desktop/RF Vision Files/CSI-SENSE-001/analysis/trial_01/features_trial01.npz --baseline-indices 0:9000 --out-dir /home/ubuntu/Desktop/RF Vision Files/CSI-SENSE-001/analysis/trial_01"
+  },
+  "note": "Deviation metrics vs baseline; covariate analysis for walking speed (\u00a77.3 v1.1)"
+}

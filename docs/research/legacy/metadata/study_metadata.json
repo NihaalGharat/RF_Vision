@@ -1,0 +1,85 @@
+{
+  "schema_version": "1.0",
+  "study_id": "CSI-SENSE-001",
+  "research_question": "Does human presence/movement produce distinguishable CSI response vs empty baseline?",
+  "prerequisite": "CSI-VERIFY-001 PASS 2026-09-06",
+  "created_utc": "2026-09-07T00:00:00Z",
+  "plan": "CSI-SENSE-001_PLAN_v1.1.md",
+  "host": {
+    "model": "Lenovo IdeaPad Gaming 3 15IAH7 82S9",
+    "os": "Ubuntu 26.04.1",
+    "kernel": "7.0.0-30",
+    "cpu": "i5-12450H",
+    "live": "/cow overlay tmpfs volatile"
+  },
+  "firmware": {
+    "esp_idf": "v5.4.4 296b6eab9445fd720e71aecab961e2d3fbca9944",
+    "esp_csi": "8633d67152db2808f141cc1595970aa9cf406045",
+    "app": "csi_recv_router",
+    "bin_sha256": "ce23861e6cfd3247d784792b6924ebe3e2e94089d46a948abb71de9cbec11083",
+    "bootloader_sha256": "7d7cf5189bbca9a09a2a6f1ef46b9c011c420af994fc7f4ea2ed82d7d8015ae6",
+    "proven_reused": true,
+    "firmware_change": "none — host-side only unless separate approval"
+  },
+  "hardware": {
+    "esp32_chip": "ESP32-D0WD-V3 rev3.1",
+    "esp32_mac": "f4:65:0b:56:0e:18",
+    "flash": "4MB 0x68:0x4016 dio 40m 4MB",
+    "bridge": "CP2102 10c4:ea60 /dev/ttyUSB0 Bus 003 Port 001 driver cp210x",
+    "router_model": "Xiaomi Mi Router 4C/R4CM",
+    "router_bssid": "8C:53:C3:5B:E1:59",
+    "router_ssid": "Nihaal",
+    "channel": 1,
+    "freq_mhz": 2412,
+    "bandwidth": "HT20 20MHz"
+  },
+  "capture": {
+    "baud": 921600,
+    "config_send_frequency": 100,
+    "expected_rate_hz_wall": 102,
+    "expected_rate_hz_chip": 141,
+    "proven_len": 128,
+    "proven_subcarriers": 64
+  },
+  "geometry_ref": "metadata/room_geometry.json",
+  "persistent_backup": {
+    "path": null,
+    "filesystem": null,
+    "size_avail_gb": null,
+    "write_test_sha_match": null,
+    "verified_utc": null,
+    "second_copy_path": null,
+    "note": "Must be verified BEFORE Phase C §5.5 — not /cow/tmp/tmpfs/overlay; verify via backup_verify.py --inspect/--write-test"
+  },
+  "n_trials_planned": 10,
+  "trial_duration_s": {
+    "A": 90,
+    "B": 12,
+    "C": 60,
+    "D": 35,
+    "E": 12,
+    "F": 90,
+    "inter_trial_rest": 30,
+    "total_per_trial_s": 310
+  },
+  "walking": {
+    "reference_range_mps": [0.8, 1.2],
+    "reference_is_target_only": true,
+    "actual_speed_recorded_per_trial": true,
+    "speed_is_covariate_not_gate": true,
+    "fields": ["path_length_m", "walk_duration_s", "estimated_speed_mps"]
+  },
+  "ethics": {
+    "human_consent": true,
+    "anonymized_subject_id": "S01",
+    "single_subject": true,
+    "no_medical_data": true
+  },
+  "phases": {
+    "A_planning": "DONE v1.1",
+    "B_host_tooling": "Phase B implements host-side tools only; no hardware/human data",
+    "C_collection": "Requires separate explicit APPROVED for Phase C + backup verified + geometry + environment",
+    "D_analysis": "Continues C",
+    "E_evaluation": "PASS/PARTIAL/FAIL per §9"
+  }
+}

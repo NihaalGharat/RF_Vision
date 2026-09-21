@@ -1,0 +1,83 @@
+{
+  "schema_version": "1.0",
+  "study_id": "CSI-SENSE-001",
+  "note": "Reused proven CSI-VERIFY-001 firmware/configuration — no modification in Phase B unless separate Gate 3 (§5.1, §11)",
+  "esp_idf": {
+    "version": "v5.4.4",
+    "commit": "296b6eab9445fd720e71aecab961e2d3fbca9944",
+    "message": "Update version to 5.4.4",
+    "clone": "git clone --branch v5.4.4 --depth 1 https://github.com/espressif/esp-idf.git /tmp/esp-idf-v5.4",
+    "path_inspected": "/tmp/esp-idf-v5.4",
+    "file": "version.cmake 5.4.4",
+    "compatible_with": "esp_csi_gain_ctrl >=0.1.4, idf >=4.4.1"
+  },
+  "esp_csi": {
+    "repo": "https://github.com/espressif/esp-csi",
+    "commit": "8633d67152db2808f141cc1595970aa9cf406045",
+    "message": "Merge update_csi_viewer_html 2026-04-22",
+    "clone": "/tmp/esp-csi-test -> /tmp/esp-csi",
+    "example": "examples/get-started/csi_recv_router",
+    "targets": "esp32 (verified .gitlab-ci.yml EXAMPLE_TARGETS)",
+    "api": "wifi_csi_info_t + rx_ctrl + wifi_csi_rx_cb + esp_csi_gain_ctrl"
+  },
+  "app_main": {
+    "file": "/tmp/csi_recv_router/main/app_main.c",
+    "size_bytes": 8309,
+    "config_send_frequency": 100,
+    "wifi_csi": "lltf_en true ltf_merge_en true channel_filter_en true",
+    "filter": "memcmp(info->mac,ctx) — BSSID filtered",
+    "printf": "ets_printf(\"CSI_DATA,%d,\"MACSTR\"...\") + \"[%d,...]\"",
+    "header": "type,id,mac,rssi,rate,sig_mode,mcs,bandwidth,smoothing,not_sounding,aggregation,stbc,fec_coding,sgi,noise_floor,ampdu_cnt,channel,secondary_channel,local_timestamp,ant,sig_len,rx_format,len,first_word,data",
+    "data": "info->buf[len] as int16 compensates gain (I0,Q0,...)",
+    "gain_ctrl": "esp_csi_gain_ctrl_get_rx_gain + compensate_gain"
+  },
+  "sdkconfig": {
+    "defaults": "CONFIG_IDF_TARGET=\"esp32\" + sdkconfig.defaults (921600, CSI_ENABLED) + CONFIG_EXAMPLE_WIFI_SSID=\"Nihaal\" + CONFIG_EXAMPLE_WIFI_PASSWORD=\"REDACTED\" + CONFIG_ESPTOOLPY_FLASHSIZE_4MB=y",
+    "console": 921600,
+    "monitor": 921600,
+    "wifi_csi_enabled": "y"
+  },
+  "build": {
+    "command": "source /tmp/esp-idf-v5.4/export.sh; cd /tmp/csi_recv_router && rm -rf build && idf.py build",
+    "steps": 1008,
+    "cmake": "4.2.3",
+    "ninja": "1.13.2",
+    "python_env": "idf5.4_py3.14_env python 3.14.4",
+    "esptool": "v4.12.0",
+    "pyserial": "3.5",
+    "outputs": {
+      "bootloader": {
+        "file": "build/bootloader/bootloader.bin",
+        "size": "26K",
+        "sha256": "7d7cf5189bbca9a09a2a6f1ef46b9c011c420af994fc7f4ea2ed82d7d8015ae6"
+      },
+      "app": {
+        "file": "build/csi_recv_router.bin",
+        "size": "723K",
+        "sha256": "ce23861e6cfd3247d784792b6924ebe3e2e94089d46a948abb71de9cbec11083",
+        "elf_sha": "9a3aa01d8..."
+      },
+      "partition_table": "build/partition_table/partition-table.bin 3.0K"
+    },
+    "flash_mode": "dio --flash_freq 40m --flash_size 4MB 0x1000 bootloader 0x8000 partition-table 0x10000 app",
+    "warnings": "2 warnings unused gain vars non-S3 (benign)"
+  },
+  "flash": {
+    "command": "sudo chmod 666 /dev/ttyUSB0; sudo -u ubuntu bash -c 'source /tmp/esp-idf-v5.4/export.sh; cd /tmp/csi_recv_router; idf.py -p /dev/ttyUSB0 -b 460800 flash'",
+    "tool": "esptool write_flash --flash_mode dio --flash_freq 40m --flash_size 4MB",
+    "chip": "ESP32-D0WD-V3 revision v3.1 MAC f4:65:0b:56:0e:18 Crystal 40MHz",
+    "result": "Compressed 26048->16425 @0x1000, 740144->496832 @0x10000, 3072->103 @0x8000 Hash verified Hard resetting via RTS Done EXIT 0",
+    "note": "NO erase_flash, only targeted write_flash to external SPI flash; volatile /tmp tools lost on reboot but ESP32 flash retains firmware"
+  },
+  "capture": {
+    "method": "pyserial Serial('/dev/ttyUSB0',921600, timeout=1) read(4096) -> wb no parsing",
+    "rate_observed": {
+      "wall_hz": 102,
+      "chip_hz": 141,
+      "median_inter_us": 5985,
+      "proven": "7152 valid / 70s wall / 50.76s chip"
+    }
+  },
+  "proven_reused": true,
+  "firmware_change_policy": "If ever needed: separate approval Gate 3 with justification + pinned SHAs + firmware_change.json — never automatic; not planned"
+}

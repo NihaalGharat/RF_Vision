@@ -1,0 +1,45 @@
+{
+  "schema_version": "1.0",
+  "study_id": "CSI-SENSE-001",
+  "parser_version": "1.0",
+  "input": {
+    "file": "/home/ubuntu/Desktop/RF Vision Files/CSI-SENSE-001/raw/smoke_test/CSI-SENSE-001_20260906T23-05-22_trial00_raw.log",
+    "sha256": "ce047085848c02209d8bcb16acc74fa33e54f2e9ebd74ed0fe85cf3646e37ca4",
+    "size_bytes": 499069,
+    "total_occurrences": 1060,
+    "valid_parsed": 1046,
+    "malformed": 14,
+    "malformed_rate": 0.013207547169811321,
+    "malformed_examples": [
+      "CSI_DATA,171,8c:53:c3:5b:e1:59,-59,11,1,0,0,0,1,0,0,0,0,-97,0,1,CSI_DATA,171,8c:53:c3:5b:e1:59,-59,11,1,0,0,0,1,0,0,0,0,-97,0,1,CSI_DATA,171,8c:53:c3:5b:e1:59,-59,11,1,0,0,0,1,0,0,0,0,-97,0,1,CSI_DATA,171,8c:53:c3:5b:e1:59,-59,11,1,0,0,0,1,0,0,0,0,-97,0,1,CSI_DATA,171,8c:53:c3:5b:e1:59,-59,11,1,0,0,",
+      "CSI_DATA,171,8c:53:c3:5b:e1:59,-59,11,1,0,0,0,1,0,0,0,0,-97,0,1,CSI_DATA,171,8c:53:c3:5b:e1:59,-59,11,1,0,0,0,1,0,0,0,0,-97,0,1,CSI_DATA,171,8c:53:c3:5b:e1:59,-59,11,1,0,0,0,1,0,0,0,0,-97,0,1,CSI_DATA,171,8c:53:c3:5b:e1:59,-59,11,1,0,0,0,1,0,0,0,0,-97,0,1,CSI_DATA,171,8c:53:c3:5b:e1:59,-59,11,1,0,0,",
+      "CSI_DATA,171,8c:53:c3:5b:e1:59,-59,11,1,0,0,0,1,0,0,0,0,-97,0,1,CSI_DATA,171,8c:53:c3:5b:e1:59,-59,11,1,0,0,0,1,0,0,0,0,-97,0,1,CSI_DATA,171,8c:53:c3:5b:e1:59,-59,11,1,0,0,0,1,0,0,0,0,-97,0,1,CSI_DATA,171,8c:53:c3:5b:e1:59,-59,11,1,0,0,0,1,0,0,0,0,-97,0,1,CSI_DATA,171,8c:53:c3:5b:e1:59,-59,11,1,0,0,"
+    ]
+  },
+  "output": {
+    "csv": "/tmp/smoke_parse/parsed_trial00.csv",
+    "csv_sha256": "be0201002b5b0d722bf0b103421202444cc38301997114286cf2e1a31e0fa529",
+    "npz": "/tmp/smoke_parse/parsed_trial00.npz",
+    "npz_sha256": "2733c6ff31737788e9d734b6c85ada00f4a0c59e8be63e1b053b03e82b9e1137",
+    "out_dir": "/tmp/smoke_parse"
+  },
+  "provenance": {
+    "regex": "CSI_DATA,(\\d+),([0-9a-f:]+),(-?\\d+),(\\d+),(\\d+),(\\d+),(\\d+),(\\d+),(\\d+),(\\d+),(\\d+),(\\d+),(\\d+),(-?\\d+),(\\d+),(\\d+),(\\d+),(\\d+),(\\d+),(\\d+),(\\d+),(\\d+),(\\d+),\"\\[([^\\]]*)\\]\"",
+    "timestamp_UTC": "2026-09-06T23:05:40.576558+00:00",
+    "command": "/home/ubuntu/tools/csi_analysis/parse_csi.py --file /home/ubuntu/Desktop/RF Vision Files/CSI-SENSE-001/raw/smoke_test/CSI-SENSE-001_20260906T23-05-22_trial00_raw.log --out-dir /tmp/smoke_parse",
+    "parser_handles_glued": true,
+    "raw_preserved": true
+  },
+  "field_summary": {
+    "seq_first": 172,
+    "seq_last": 1217,
+    "seq_missing": 0,
+    "len_counter": {
+      "128": 1046
+    },
+    "channel_counter": {
+      "1": 1046
+    }
+  },
+  "note": "Raw immutable evidence; derived files are separate. Glued handling via finditer."
+}

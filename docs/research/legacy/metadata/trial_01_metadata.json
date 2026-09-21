@@ -1,0 +1,20 @@
+{
+  "schema_version": "1.0",
+  "study_id": "CSI-SENSE-001",
+  "trial": "01",
+  "protocol_A_F_s": {"A_EMPTY":90,"B_ENTER":12,"C_STATIONARY":60,"D_WALK":35,"E_EXIT":12,"F_RECOVERY":90,"total":299,"requested_capture_s":310},
+  "wall_clock_start_UTC": "2026-09-06T23:06:26.630998+00:00",
+  "wall_clock_end_UTC": "2026-09-06T23:11:37.615342+00:00",
+  "duration_s": 310.98,
+  "raw_file": "raw/trial_01/CSI-SENSE-001_20260906T23-06-26_trial01_raw.log",
+  "raw_sha256": "4734dcf569040003c293891fa6b3643a570ff46b6ff6b7f827f1383b1278a40a",
+  "raw_size_bytes": 14304955,
+  "smoke_file": "raw/smoke_test/CSI-SENSE-001_20260906T23-05-22_trial00_raw.log",
+  "smoke_sha256": "ce047085848c02209d8bcb16acc74fa33e54f2e9ebd74ed0fe85cf3646e37ca4",
+  "events_file": "raw/trial_01/events_trial01.jsonl",
+  "capture_meta": "raw/trial_01/capture_meta_trial01.json",
+  "validate_trial01": "raw/trial_01/validate_trial01.json",
+  "parse_meta": "analysis/trial_01/parse_meta_trial01.json",
+  "preserved_readonly": true,
+  "volatile_warning": "DATA IS CURRENTLY STORED ON VOLATILE UBUNTU LIVE STORAGE — upload to Google Drive before reboot/shutdown"
+}

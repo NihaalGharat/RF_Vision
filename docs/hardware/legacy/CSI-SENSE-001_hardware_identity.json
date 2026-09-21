@@ -1,0 +1,65 @@
+{
+  "schema_version": "1.0",
+  "study_id": "CSI-SENSE-001",
+  "provenance": "CSI-VERIFY-001 PASS 2026-09-06 (read-only inspection, no assumptions)",
+  "esp32": {
+    "chip": "ESP32-D0WD-V3 (revision v3.1)",
+    "cores": "Dual Core 240MHz WiFi/BT",
+    "crystal_mhz": 40,
+    "vref_mhz": 40,
+    "mac": "f4:65:0b:56:0e:18",
+    "mac_source": "esptool --chip esp32 chip_id",
+    "tool": "esptool v4.12.0"
+  },
+  "flash": {
+    "size": "4 MB",
+    "manufacturer": "0x68",
+    "device": "0x4016",
+    "voltage": "3.3V",
+    "mode": "dio",
+    "freq": "40m",
+    "size_config": "4MB",
+    "source": "esptool flash_id"
+  },
+  "bridge": {
+    "chip": "Silicon Labs CP2102",
+    "vid_pid": "10c4:ea60",
+    "bus": "Bus 003 Port 001",
+    "driver": "cp210x",
+    "device": "/dev/ttyUSB0",
+    "major_minor": "188,0",
+    "group": "dialout",
+    "by_id": "usb-Silicon_Labs_CP2102_0001-if00-port0",
+    "baud_proven": 921600
+  },
+  "router": {
+    "ssid": "Nihaal",
+    "bssid": "8C:53:C3:5B:E1:59",
+    "vendor": "Xiaomi (Beijing Xiaomi Mobile Software)",
+    "model": "Xiaomi Mi Router 4C / R4CM",
+    "channel": 1,
+    "freq_mhz": 2412,
+    "bandwidth": "HT20 20MHz",
+    "signal_dbm": -39,
+    "gateway": "192.168.31.1",
+    "security": "WPA2-PSK (method on file, value not migrated)",
+    "verification": "nmcli + iw dev link/info + api.macvendors.com"
+  },
+  "host": {
+    "model": "Lenovo IdeaPad Gaming 3 15IAH7 82S9",
+    "bios": "JMCN48WW",
+    "os": "Ubuntu 26.04.1 LTS Resolute",
+    "kernel": "7.0.0-30",
+    "cpu": "i5-12450H",
+    "arch": "x86_64",
+    "mem": "15Gi",
+    "wifi": "Intel AX201 iwlwifi wlp0s20f3",
+    "ip": "192.168.31.148/24",
+    "live": "/cow 7.7G overlay + /tmp 7.7G tmpfs — volatile (backup gate §5.5)",
+    "storage": {
+      "sda": "HP v210w 32GB /cdrom ro",
+      "nvme0n1": "INTEL 476.9G BitLocker locked — untouched"
+    }
+  },
+  "not_modified": "No Windows/BIOS/nvme0n1/partition/router driver/firmware change — verified lsblk nvme untouched"
+}

@@ -1,0 +1,32 @@
+{
+  "schema_version": "1.0",
+  "study_id": "CSI-SENSE-001",
+  "version": "1.0",
+  "trial": null,
+  "input": {
+    "features": "/home/ubuntu/Desktop/RF Vision Files/CSI-SENSE-001/analysis/trial_01/features_trial01.npz",
+    "baseline": "/home/ubuntu/Desktop/RF Vision Files/CSI-SENSE-001/analysis/trial_01/baseline_model_trial01.npz",
+    "events": "/home/ubuntu/Desktop/RF Vision Files/CSI-SENSE-001/raw/trial_01/events_trial01.jsonl",
+    "packets": 30261,
+    "subcarriers": 64
+  },
+  "outputs": [
+    "/home/ubuntu/Desktop/RF Vision Files/CSI-SENSE-001/analysis/trial_01/figures/timeseries_demo.png",
+    "/home/ubuntu/Desktop/RF Vision Files/CSI-SENSE-001/analysis/trial_01/figures/rssi_demo.png",
+    "/home/ubuntu/Desktop/RF Vision Files/CSI-SENSE-001/analysis/trial_01/figures/heatmap_demo.png",
+    "/home/ubuntu/Desktop/RF Vision Files/CSI-SENSE-001/analysis/trial_01/figures/subcarrier_variance_demo.png"
+  ],
+  "events_mapped": 22,
+  "walking": null,
+  "reproducibility": {
+    "timestamp_UTC": "2026-09-06T23:12:33.037440+00:00",
+    "command": "/home/ubuntu/tools/csi_analysis/temporal_plots.py --features /home/ubuntu/Desktop/RF Vision Files/CSI-SENSE-001/analysis/trial_01/features_trial01.npz --baseline /home/ubuntu/Desktop/RF Vision Files/CSI-SENSE-001/analysis/trial_01/baseline_model_trial01.npz --events /home/ubuntu/Desktop/RF Vision Files/CSI-SENSE-001/raw/trial_01/events_trial01.jsonl --out-dir /home/ubuntu/Desktop/RF Vision Files/CSI-SENSE-001/analysis/trial_01/figures",
+    "matplotlib": true
+  },
+  "output_shas": {
+    "/home/ubuntu/Desktop/RF Vision Files/CSI-SENSE-001/analysis/trial_01/figures/timeseries_demo.png": "0ef533574185d7d9abc9ef191f1299dc7cdd9fd3cb4642c04eb1485422fc7641",
+    "/home/ubuntu/Desktop/RF Vision Files/CSI-SENSE-001/analysis/trial_01/figures/rssi_demo.png": "85f2694d8df0964d011c3858280b3401a1141e00d7f28b5ee46062c0d7d8dcf1",
+    "/home/ubuntu/Desktop/RF Vision Files/CSI-SENSE-001/analysis/trial_01/figures/heatmap_demo.png": "1be323a77e2b4547fa505c6a84001fc6c8a6ded16c0beb85d81eef8206a60a8b",
+    "/home/ubuntu/Desktop/RF Vision Files/CSI-SENSE-001/analysis/trial_01/figures/subcarrier_variance_demo.png": "be345bd409149592307b45416c5d78b5ea7ed13999d36a49ff861e960c697793"
+  }
+}

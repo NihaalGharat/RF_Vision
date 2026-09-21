@@ -1,0 +1,52 @@
+{
+  "schema_version": "1.0",
+  "study_id": "CSI-SENSE-001",
+  "file": "/home/ubuntu/Desktop/RF Vision Files/CSI-SENSE-001/raw/trial_01/CSI-SENSE-001_20260906T23-06-26_trial01_raw.log",
+  "file_size_bytes": 14304955,
+  "trial": null,
+  "total_occurrences": 30262,
+  "valid_parsed": 30261,
+  "malformed": 1,
+  "malformed_rate": 3.304474258145529e-05,
+  "seq": {
+    "first": 6542,
+    "last": 36802,
+    "unique": 30261,
+    "missing": 0,
+    "continuous_gaps": 30260,
+    "continuity_frac": 1.0
+  },
+  "field_stability": {
+    "len_128": 30261,
+    "len_128_pct": 1.0,
+    "channel_1": 30261,
+    "channel_1_pct": 1.0,
+    "bssid_ok": 30261,
+    "bssid_ok_pct": 1.0,
+    "sig_len_values": {
+      "83": 30256,
+      "327": 5
+    },
+    "noise_floor_values": {
+      "-97": 30261
+    }
+  },
+  "inter_arrival_us": {
+    "mean": 7489.819662921348,
+    "median": 6051,
+    "min": 189,
+    "max": 344109,
+    "stdev": 10516.132856549793,
+    "gap_gt_100ms": 108,
+    "gap_gt_500ms": 0
+  },
+  "rssi": {
+    "min": -78,
+    "max": -55,
+    "mean": -59.76663031624864
+  },
+  "valid_trial": true,
+  "invalid_reasons": [],
+  "rate_hz_estimate": 133.51897534694186,
+  "note": "Raw immutable; this is derived validation; \u00a73.7 criteria, walking speed not gate"
+}

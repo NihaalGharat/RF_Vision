@@ -1,0 +1,43 @@
+{
+  "schema_version": "1.0",
+  "study_id": "CSI-SENSE-001",
+  "parser_version": "1.0",
+  "input": {
+    "file": "/home/ubuntu/Desktop/RF Vision Files/CSI-SENSE-001/raw/trial_01/CSI-SENSE-001_20260906T23-06-26_trial01_raw.log",
+    "sha256": "4734dcf569040003c293891fa6b3643a570ff46b6ff6b7f827f1383b1278a40a",
+    "size_bytes": 14304955,
+    "total_occurrences": 30262,
+    "valid_parsed": 30261,
+    "malformed": 1,
+    "malformed_rate": 3.304474258145529e-05,
+    "malformed_examples": [
+      "CSI_DATA,36803,8c:53:c3:5b:e1:59,-60,11,1,0,0,0,1,0,0,0,0,-97,0,1,0,278968227,0,83,1,128,1,\"[83,-80,4,0,7,-1,12,4,16,9,20,12,23,13,25,14,26,13,27,12,26,11,23,9,19,7,15,6,11,5,6,4,2,3,-3,4,-7,4,-10,4,-13,4,-15,4,-16,5,-16,5,-15,4,-14,4,-13,4,-4,1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,-2,3,-9,15,-10,17"
+    ]
+  },
+  "output": {
+    "csv": "/home/ubuntu/Desktop/RF Vision Files/CSI-SENSE-001/analysis/trial_01/parsed_trial01.csv",
+    "csv_sha256": "efd7808c28e3c65a362206d2ebe1d70bcba2df88e33734547573e53f3d28ab19",
+    "npz": "/home/ubuntu/Desktop/RF Vision Files/CSI-SENSE-001/analysis/trial_01/parsed_trial01.npz",
+    "npz_sha256": "6b20afce1945b8de05f8356fe659d74155ba7941c3601780e0d543ac25efac2d",
+    "out_dir": "/home/ubuntu/Desktop/RF Vision Files/CSI-SENSE-001/analysis/trial_01"
+  },
+  "provenance": {
+    "regex": "CSI_DATA,(\\d+),([0-9a-f:]+),(-?\\d+),(\\d+),(\\d+),(\\d+),(\\d+),(\\d+),(\\d+),(\\d+),(\\d+),(\\d+),(\\d+),(-?\\d+),(\\d+),(\\d+),(\\d+),(\\d+),(\\d+),(\\d+),(\\d+),(\\d+),(\\d+),\"\\[([^\\]]*)\\]\"",
+    "timestamp_UTC": "2026-09-06T23:11:50.869630+00:00",
+    "command": "/home/ubuntu/tools/csi_analysis/parse_csi.py --file /home/ubuntu/Desktop/RF Vision Files/CSI-SENSE-001/raw/trial_01/CSI-SENSE-001_20260906T23-06-26_trial01_raw.log --out-dir /home/ubuntu/Desktop/RF Vision Files/CSI-SENSE-001/analysis/trial_01",
+    "parser_handles_glued": true,
+    "raw_preserved": true
+  },
+  "field_summary": {
+    "seq_first": 6542,
+    "seq_last": 36802,
+    "seq_missing": 0,
+    "len_counter": {
+      "128": 30261
+    },
+    "channel_counter": {
+      "1": 30261
+    }
+  },
+  "note": "Raw immutable evidence; derived files are separate. Glued handling via finditer."
+}

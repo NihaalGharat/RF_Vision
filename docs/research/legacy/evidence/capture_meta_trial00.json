@@ -1,0 +1,43 @@
+{
+  "schema_version": "1.0",
+  "study_id": "CSI-SENSE-001",
+  "trial": "00",
+  "trial_number": 0,
+  "wall_clock_start_UTC": "2026-09-06T23:05:22.207240+00:00",
+  "wall_clock_end_UTC": "2026-09-06T23:05:32.297707+00:00",
+  "wall_clock_start_ns": 1788735922207254654,
+  "wall_clock_end_ns": 1788735932297716645,
+  "monotonic_start_ns": 9773414121590,
+  "monotonic_end_ns": 9783504580973,
+  "elapsed_wall_s": 10.090467,
+  "elapsed_mono_s": 10.090459383,
+  "requested_duration_s": 10,
+  "capture_config": {
+    "port": "/dev/ttyUSB0",
+    "baud": 921600,
+    "proven_baud": 921600,
+    "config_send_frequency": 100,
+    "capture_script": "tools/csi_capture/capture_csi_sense.py",
+    "capture_script_version": "1.0",
+    "python_version": "3.14.4 (main, Jun 18 2026, 14:25:02) [GCC 15.2.0]",
+    "proven_len": 128,
+    "proven_subcarriers": 64
+  },
+  "output": {
+    "raw_file": "Desktop/RF Vision Files/CSI-SENSE-001/raw/smoke_test/CSI-SENSE-001_20260906T23-05-22_trial00_raw.log",
+    "raw_filename": "CSI-SENSE-001_20260906T23-05-22_trial00_raw.log",
+    "raw_size_bytes": 499069,
+    "raw_sha256": "ce047085848c02209d8bcb16acc74fa33e54f2e9ebd74ed0fe85cf3646e37ca4",
+    "sha256_file": "CSI-SENSE-001_20260906T23-05-22_trial00_raw.log.sha256",
+    "bytes_written": 499069
+  },
+  "integrity": {
+    "raw_preserved_readonly": true,
+    "note": "Raw is immutable. Analysis works on copies via parse_csi.py."
+  },
+  "reproducibility": {
+    "command": "/home/ubuntu/tools/csi_capture/capture_csi_sense.py --trial 00 --duration 10 --port /dev/ttyUSB0 --baud 921600 --output-dir /home/ubuntu/Desktop/RF Vision Files/CSI-SENSE-001/raw/smoke_test",
+    "host": "ubuntu"
+  },
+  "dry_run": false
+}

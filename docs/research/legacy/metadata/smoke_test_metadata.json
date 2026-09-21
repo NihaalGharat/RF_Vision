@@ -1,0 +1,13 @@
+{
+  "schema_version": "1.0",
+  "study_id": "CSI-SENSE-001",
+  "trial": "00_smoke",
+  "purpose": "10-s NO-HUMAN smoke test",
+  "wall_clock_start_UTC": "2026-09-06T23:05:22.207240+00:00",
+  "duration_s": 10.09,
+  "raw_file": "raw/smoke_test/CSI-SENSE-001_20260906T23-05-22_trial00_raw.log",
+  "raw_sha256": "ce047085848c02209d8bcb16acc74fa33e54f2e9ebd74ed0fe85cf3646e37ca4",
+  "raw_size_bytes": 499069,
+  "human_present": false,
+  "volatile": "DATA IS CURRENTLY STORED ON VOLATILE UBUNTU LIVE STORAGE."
+}

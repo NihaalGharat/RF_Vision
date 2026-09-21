@@ -1,0 +1,22 @@
+{"event": "trial_start", "wall_clock_ns": 1788735988627501448, "wall_clock_UTC": "2026-09-06T23:06:28.627501+00:00", "chip_seq": null, "chip_timestamp_us": null, "note": "A EMPTY start \u2014 subject outside, no human in area"}
+{"event": "condition_A_start", "wall_clock_ns": 1788735988720522062, "wall_clock_UTC": "2026-09-06T23:06:28.720522+00:00", "chip_seq": null, "chip_timestamp_us": null, "note": "EMPTY 90s start"}
+{"event": "condition_A_end", "wall_clock_ns": 1788736078836965157, "wall_clock_UTC": "2026-09-06T23:07:58.836965+00:00", "chip_seq": null, "chip_timestamp_us": null, "note": "A EMPTY end"}
+{"event": "condition_B_start", "wall_clock_ns": 1788736078930286442, "wall_clock_UTC": "2026-09-06T23:07:58.930286+00:00", "chip_seq": null, "chip_timestamp_us": null, "note": "ENTER ~12s start \u2014 subject approaches doorway"}
+{"event": "threshold_cross_in", "wall_clock_ns": 1788736079018621014, "wall_clock_UTC": "2026-09-06T23:07:59.018621+00:00", "chip_seq": null, "chip_timestamp_us": null, "note": "ENTER threshold cross"}
+{"event": "condition_B_end", "wall_clock_ns": 1788736091112401694, "wall_clock_UTC": "2026-09-06T23:08:11.112402+00:00", "chip_seq": null, "chip_timestamp_us": null, "note": "ENTER end"}
+{"event": "condition_C_start", "wall_clock_ns": 1788736091201866691, "wall_clock_UTC": "2026-09-06T23:08:11.201867+00:00", "chip_seq": null, "chip_timestamp_us": null, "note": "STATIONARY 60s start \u2014 subject stationary central/lower area"}
+{"event": "arrival_P1", "wall_clock_ns": 1788736091292901218, "wall_clock_UTC": "2026-09-06T23:08:11.292901+00:00", "chip_seq": null, "chip_timestamp_us": null, "note": "STATIONARY position reached"}
+{"event": "condition_C_end", "wall_clock_ns": 1788736151387509021, "wall_clock_UTC": "2026-09-06T23:09:11.387509+00:00", "chip_seq": null, "chip_timestamp_us": null, "note": "STATIONARY end"}
+{"event": "condition_D_start", "wall_clock_ns": 1788736151460758992, "wall_clock_UTC": "2026-09-06T23:09:11.460759+00:00", "chip_seq": null, "chip_timestamp_us": null, "note": "WALK ~35s start"}
+{"event": "walk_start", "wall_clock_ns": 1788736151532866991, "wall_clock_UTC": "2026-09-06T23:09:11.532867+00:00", "chip_seq": null, "chip_timestamp_us": null, "note": "WALK_START \u2014 subject walks doorway <-> central area between router and ESP32"}
+{"event": "walk_end", "wall_clock_ns": 1788736186628974554, "wall_clock_UTC": "2026-09-06T23:09:46.628975+00:00", "chip_seq": null, "chip_timestamp_us": null, "note": "WALK_END \u2014 walking duration ~35s actual"}
+{"event": "condition_D_end", "wall_clock_ns": 1788736186718307609, "wall_clock_UTC": "2026-09-06T23:09:46.718307+00:00", "chip_seq": null, "chip_timestamp_us": null, "note": "WALK end"}
+{"event": "condition_E_start", "wall_clock_ns": 1788736186793033929, "wall_clock_UTC": "2026-09-06T23:09:46.793034+00:00", "chip_seq": null, "chip_timestamp_us": null, "note": "EXIT ~12s start \u2014 subject leaves via doorway"}
+{"event": "depart", "wall_clock_ns": 1788736186880063327, "wall_clock_UTC": "2026-09-06T23:09:46.880063+00:00", "chip_seq": null, "chip_timestamp_us": null, "note": "EXIT depart"}
+{"event": "condition_E_end", "wall_clock_ns": 1788736198978656127, "wall_clock_UTC": "2026-09-06T23:09:58.978656+00:00", "chip_seq": null, "chip_timestamp_us": null, "note": "EXIT end"}
+{"event": "door_close", "wall_clock_ns": 1788736199066041101, "wall_clock_UTC": "2026-09-06T23:09:59.066041+00:00", "chip_seq": null, "chip_timestamp_us": null, "note": "door close after EXIT"}
+{"event": "condition_F_start", "wall_clock_ns": 1788736199153694842, "wall_clock_UTC": "2026-09-06T23:09:59.153695+00:00", "chip_seq": null, "chip_timestamp_us": null, "note": "RECOVERY 90s start \u2014 empty again"}
+{"event": "recovery_start", "wall_clock_ns": 1788736199247842458, "wall_clock_UTC": "2026-09-06T23:09:59.247843+00:00", "chip_seq": null, "chip_timestamp_us": null, "note": "RECOVERY start"}
+{"event": "condition_F_end", "wall_clock_ns": 1788736289349454062, "wall_clock_UTC": "2026-09-06T23:11:29.349454+00:00", "chip_seq": null, "chip_timestamp_us": null, "note": "RECOVERY end"}
+{"event": "recovery_end", "wall_clock_ns": 1788736289439936469, "wall_clock_UTC": "2026-09-06T23:11:29.439936+00:00", "chip_seq": null, "chip_timestamp_us": null, "note": "RECOVERY end"}
+{"event": "trial_end", "wall_clock_ns": 1788736289526935368, "wall_clock_UTC": "2026-09-06T23:11:29.526935+00:00", "chip_seq": null, "chip_timestamp_us": null, "note": "A-F trial complete total ~299s + setup"}

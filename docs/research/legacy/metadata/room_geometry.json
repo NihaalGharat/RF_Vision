@@ -1,0 +1,94 @@
+{
+  "schema_version": "1.0",
+  "study_id": "CSI-SENSE-001",
+  "note": "To be filled at collection time (Phase C) with tape measure ±0.05m + photos; placeholders null until measured (§4)",
+  "coordinate_origin": "router floor projection",
+  "units": "meters",
+  "room": {
+    "length_m": null,
+    "width_m": null,
+    "height_m": null,
+    "wall_material": null,
+    "door": {
+      "wall": null,
+      "offset_m": null,
+      "state_A_C_F": "closed",
+      "state_B_E": "opened then closed"
+    },
+    "window": null,
+    "floor_type": null
+  },
+  "router": {
+    "x_m": 0.0,
+    "y_m": 0.0,
+    "z_m": null,
+    "orientation": null,
+    "model": "Xiaomi Mi Router 4C/R4CM",
+    "bssid": "8C:53:C3:5B:E1:59",
+    "channel": 1,
+    "freq_mhz": 2412,
+    "bandwidth": "HT20 20MHz",
+    "photo": null
+  },
+  "esp32": {
+    "x_m": null,
+    "y_m": null,
+    "z_m": null,
+    "antenna_orientation": null,
+    "usb_cable_m": null,
+    "fixation": "taped with weight, strain-relieved",
+    "mac": "f4:65:0b:56:0e:18",
+    "chip": "ESP32-D0WD-V3 rev3.1",
+    "flash": "4MB 0x68:0x4016 dio 40m",
+    "photo": null
+  },
+  "host": {
+    "x_m": null,
+    "y_m": null,
+    "model": "Lenovo 82S9",
+    "position_note": "outside LOS if possible, not between router<->receiver"
+  },
+  "furniture": [
+    {
+      "type": null,
+      "x1": null,
+      "y1": null,
+      "x2": null,
+      "y2": null,
+      "material": null,
+      "height_m": null,
+      "note": "List each RF obstacle: bed/desk/wardrobe/metal shelf"
+    }
+  ],
+  "human_positions": {
+    "P1": {
+      "x_m": null,
+      "y_m": null,
+      "facing_deg": 0,
+      "note": "midpoint LOS — strongest expected perturbation"
+    },
+    "P2": {
+      "x_m": null,
+      "y_m": null,
+      "facing_deg": null,
+      "note": "far corner NLOS"
+    },
+    "P3": {
+      "x_m": null,
+      "y_m": null,
+      "facing_deg": null,
+      "note": "near router"
+    }
+  },
+  "walking_path": {
+    "waypoints": ["P1", "P2", "P3"],
+    "path_length_m": null,
+    "los_cross_xy": null,
+    "tape_photo": null,
+    "note": "Must cross LOS at least once per traversal; 2 traversals per trial D ~30-40s",
+    "reference_speed_mps": [0.8, 1.2],
+    "reference_is_target_only": true
+  },
+  "measurement_protocol": "Tape measure ±0.05m, photos from two angles with visible tape marks, stored as room_geometry_photo_*.jpg",
+  "placeholder": true
+}

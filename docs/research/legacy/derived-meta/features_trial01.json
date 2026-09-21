@@ -1,0 +1,33 @@
+{
+  "schema_version": "1.0",
+  "study_id": "CSI-SENSE-001",
+  "version": "1.0",
+  "input": {
+    "npz": "/home/ubuntu/Desktop/RF Vision Files/CSI-SENSE-001/analysis/trial_01/parsed_trial01.npz",
+    "sha256": "6b20afce1945b8de05f8356fe659d74155ba7941c3601780e0d543ac25efac2d",
+    "packets": 30261,
+    "len": 128,
+    "subcarriers": 64
+  },
+  "features": {
+    "amp_shape": [
+      30261,
+      64
+    ],
+    "amp_mean_global": 20.08533717540289,
+    "amp_std_global": 1.2888888405708652,
+    "zeros_per_packet_mean": 9.02187634248703,
+    "null_subcarriers": 0,
+    "phase_detrend_slopes_mean": 0.05115632054768276
+  },
+  "walking": null,
+  "reproducibility": {
+    "timestamp_UTC": "2026-09-06T23:12:26.532073+00:00",
+    "command": "/home/ubuntu/tools/csi_analysis/features.py --npz /home/ubuntu/Desktop/RF Vision Files/CSI-SENSE-001/analysis/trial_01/parsed_trial01.npz --out-dir /home/ubuntu/Desktop/RF Vision Files/CSI-SENSE-001/analysis/trial_01",
+    "phase_note": "amplitude via sqrt(I^2+Q^2), phase detrended \u2014 absolute phase not overinterpreted (\u00a77.2)"
+  },
+  "output": {
+    "features_npz": "/home/ubuntu/Desktop/RF Vision Files/CSI-SENSE-001/analysis/trial_01/features_trial01.npz",
+    "sha256": "e6c1891c2e3d88c3214b47812befb932fe011af24e008caa713b47bd1ba32d89"
+  }
+}
