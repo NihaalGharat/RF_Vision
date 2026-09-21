@@ -1,0 +1,330 @@
+RFVISION-007 FINAL TREE — ~/Desktop/RF Vision (tracked files)
+generated 2026-09-21; excludes .git, __pycache__, .pytest_cache
+
+├── ai/
+│   ├── datasets/
+│   │   ├── __init__.py
+│   │   ├── collector.py
+│   │   └── dataset.py
+│   ├── evaluation/
+│   │   ├── __init__.py
+│   │   └── evaluate.py
+│   ├── inference/
+│   │   └── __init__.py
+│   ├── training/
+│   │   ├── __init__.py
+│   │   ├── baseline_model.py
+│   │   ├── neural_network.py
+│   │   └── train.py
+│   ├── xai/
+│   │   ├── __init__.py
+│   │   └── xai.py
+│   └── __init__.py
+├── config/
+│   ├── __init__.py
+│   ├── default.yaml
+│   └── settings.py
+├── csi/
+│   ├── capture/
+│   │   ├── __init__.py
+│   │   ├── helpers.py
+│   │   └── serial_receiver.py
+│   ├── formats/
+│   │   └── WIRE_FORMATS.md
+│   ├── parser/
+│   │   ├── __init__.py
+│   │   ├── csi_parser.py
+│   │   └── esp_csv_adapter.py
+│   ├── transport/
+│   │   ├── __init__.py
+│   │   └── serial_config.py
+│   ├── validation/
+│   │   ├── __init__.py
+│   │   └── validators.py
+│   └── __init__.py
+├── docs/
+│   ├── architecture/
+│   │   ├── RFVISION_ARCHITECTURE.md
+│   │   ├── RFVISION_DATA_SCHEMA.md
+│   │   ├── RFVISION_UI_DESIGN_DERIVED_FROM_RUVIEW.md
+│   │   └── RUVIEW_TO_RFVISION_COMPONENT_MAP.md
+│   ├── background/
+│   │   ├── CSI-Applications.md
+│   │   ├── Introduction-to-Wireless-Location.md
+│   │   ├── OFDM-introduction.md
+│   │   ├── Signal-Processing-Fundamentals.md
+│   │   ├── Wireless-Channel-Fundamentals.md
+│   │   └── Wireless-indicators-CSI-and-RSSI.md
+│   ├── hardware/
+│   │   ├── legacy/
+│   │   │   ├── CSI-SENSE-001_capture_config.json
+│   │   │   ├── CSI-SENSE-001_firmware_versions.REDACTED.json
+│   │   │   └── CSI-SENSE-001_hardware_identity.json
+│   │   ├── BASELINE.md
+│   │   └── RUVIEW_RFVISION_HARDWARE_COMPATIBILITY.md
+│   ├── reference/
+│   │   ├── NOTES.md
+│   │   ├── README.md
+│   │   ├── csi_data_read_parse.py
+│   │   ├── csi_recv_app_main.c
+│   │   ├── csi_send_app_main.c
+│   │   ├── esp32_receiver.ino
+│   │   ├── example_csi.csv
+│   │   ├── human_sensing_requirements.txt
+│   │   └── requirements.txt
+│   ├── research/
+│   │   ├── legacy/
+│   │   │   ├── analysis-phase/
+│   │   │   │   ├── CURRENT_VS_LEGACY_MATRIX.md
+│   │   │   │   ├── LEGACY_INVENTORY.md
+│   │   │   │   └── MIGRATION_PLAN.md
+│   │   │   ├── derived-meta/
+│   │   │   │   ├── baseline_model_trial01.json
+│   │   │   │   ├── features_trial01.json
+│   │   │   │   ├── parse_meta_trial00.json
+│   │   │   │   ├── parse_meta_trial01.json
+│   │   │   │   ├── pca_spectrogram_trial01.json
+│   │   │   │   └── temporal_plots_demo_manifest.json
+│   │   │   ├── evidence/
+│   │   │   │   ├── capture_meta_trial00.json
+│   │   │   │   ├── capture_meta_trial01.json
+│   │   │   │   ├── events_trial01.jsonl
+│   │   │   │   ├── validate_smoke.json
+│   │   │   │   └── validate_trial01.json
+│   │   │   ├── metadata/
+│   │   │   │   ├── environment_trial01.json
+│   │   │   │   ├── room_geometry.json
+│   │   │   │   ├── smoke_test_metadata.json
+│   │   │   │   ├── study_metadata.json
+│   │   │   │   └── trial_01_metadata.json
+│   │   │   ├── CSI-SENSE-001_PERSISTENT_BACKUP_GATE_REPORT.md
+│   │   │   ├── CSI-SENSE-001_PHASE_B_IMPLEMENTATION_REPORT.md
+│   │   │   ├── CSI-SENSE-001_PHASE_C_PILOT_REPORT.md
+│   │   │   ├── CSI-SENSE-001_PHASE_C_READINESS_REPORT.md
+│   │   │   ├── CSI-SENSE-001_PLAN_v1.1.md
+│   │   │   ├── CSI-VERIFY-001_FINAL_REPORT.md
+│   │   │   ├── CSI-VERIFY-001_PHASE1_APPROVAL_GATE.md
+│   │   │   ├── FINAL-ARCHIVE-AUDIT-002.md
+│   │   │   ├── FINAL-FOLDER-AUDIT-001.md
+│   │   │   ├── LEGACY-CLEANUP-MANIFEST.md
+│   │   │   └── TOOL-REFERENCE.md
+│   │   ├── LEGACY-MIGRATION-PROVENANCE.md
+│   │   ├── RFVISION-003-LIVE-CSI-GOLDEN-TEST-REPORT.md
+│   │   ├── RFVISION-004-RUVIEW-AUDIT-REPORT.md
+│   │   ├── RFVISION-005-RUVIEW-INSPIRED-UI-IMPLEMENTATION-REPORT.md
+│   │   ├── RFVISION-006-LEGACY-CONSOLIDATION-REPORT.md
+│   │   ├── RFVISION-007-FINAL-PROJECT-CONSOLIDATION-REPORT.md
+│   │   ├── RFVISION-REPO-FOUNDATION-001-ANALYSIS-ARCHIVE.md
+│   │   └── SCIENTIFIC_VALIDATION_STATUS.md
+│   ├── security/
+│   │   └── LEGACY_CREDENTIAL_AUDIT.md
+│   ├── software/
+│   │   ├── DEPENDENCIES.md
+│   │   └── THREEJS_VERSION.md
+│   └── third_party/
+│       ├── bib/
+│       │   ├── esp32_csi_tool_percom.bib
+│       │   └── esp32_csi_tool_wowmom.bib
+│       ├── licenses/
+│       │   ├── Apache-2.0.txt
+│       │   ├── MIT-CSI-Tool.txt
+│       │   └── MIT-Human-Sensing.txt
+│       ├── CSI_SENSING_STUDY_NOTES.md
+│       ├── RUVIEW_IMPLEMENTATION_PROVENANCE.md
+│       ├── RUVIEW_REUSE_AND_LICENSE_AUDIT.md
+│       └── SOURCE_PROVENANCE.md
+├── dsp/
+│   ├── amplitude/
+│   │   ├── __init__.py
+│   │   └── amplitude.py
+│   ├── features/
+│   │   ├── __init__.py
+│   │   └── feature_extraction.py
+│   ├── filtering/
+│   │   ├── __init__.py
+│   │   └── filters.py
+│   ├── phase/
+│   │   ├── __init__.py
+│   │   └── phase.py
+│   ├── preprocessing/
+│   │   ├── __init__.py
+│   │   └── preprocessing.py
+│   ├── README.md
+│   └── __init__.py
+├── experiments/
+│   ├── analysis/
+│   │   └── README.md
+│   ├── configurations/
+│   │   ├── README.md
+│   │   └── example_override.yaml
+│   ├── metadata/
+│   │   └── EXPERIMENT_METADATA_SCHEMA.md
+│   └── protocols/
+│       └── BASELINE_PROTOCOL.md
+├── firmware/
+│   ├── acquisition/
+│   │   └── README.md
+│   ├── esp32/
+│   │   └── csi_recv_router/
+│   │       ├── main/
+│   │       │   ├── CMakeLists.txt
+│   │       │   ├── app_main.c
+│   │       │   └── idf_component.yml
+│   │       ├── CMakeLists.txt
+│   │       ├── README.md
+│   │       ├── README_RFVISION.md
+│   │       └── sdkconfig.defaults
+│   ├── protocols/
+│   │   └── README.md
+│   └── traffic_gen_reference/
+│       ├── README.md
+│       ├── README_RFVISION.md
+│       └── esp32_ap.ino
+├── localization/
+│   ├── calibration/
+│   │   ├── __init__.py
+│   │   └── calibrate.py
+│   ├── geometry/
+│   │   ├── __init__.py
+│   │   └── geometry.py
+│   ├── positioning/
+│   │   ├── __init__.py
+│   │   └── position_1d.py
+│   ├── synchronization/
+│   │   ├── __init__.py
+│   │   └── sync.py
+│   ├── tracking/
+│   │   ├── __init__.py
+│   │   └── position_filter.py
+│   └── __init__.py
+├── logs/
+│   └── app.log
+├── realtime/
+│   ├── protocol/
+│   │   ├── README.md
+│   │   ├── __init__.py
+│   │   └── event_envelope.py
+│   ├── server/
+│   │   ├── __init__.py
+│   │   └── live_app.py
+│   ├── streaming/
+│   │   └── __init__.py
+│   └── __init__.py
+├── research/
+│   ├── datasets/
+│   │   └── README.md
+│   ├── publication/
+│   │   └── README.md
+│   └── reports/
+│       └── README.md
+├── sensing/
+│   ├── activity/
+│   │   ├── __init__.py
+│   │   └── activity.py
+│   ├── motion/
+│   │   ├── __init__.py
+│   │   └── motion.py
+│   ├── presence/
+│   │   ├── __init__.py
+│   │   └── presence.py
+│   ├── state/
+│   │   ├── __init__.py
+│   │   └── state.py
+│   ├── __init__.py
+│   └── inference_engine.py
+├── tests/
+│   ├── fixtures/
+│   │   ├── README.md
+│   │   ├── golden_esp_csv_line.txt
+│   │   ├── golden_json_line.txt
+│   │   └── malformed_lines.txt
+│   ├── integration/
+│   │   ├── __init__.py
+│   │   ├── test_live_loop.py
+│   │   ├── test_pipeline.py
+│   │   └── test_web_server.py
+│   ├── synthetic/
+│   │   ├── __init__.py
+│   │   └── synth.py
+│   ├── unit/
+│   │   ├── __init__.py
+│   │   ├── test_csi_parser.py
+│   │   ├── test_esp_csv_adapter.py
+│   │   ├── test_features.py
+│   │   ├── test_foundation.py
+│   │   ├── test_localization.py
+│   │   ├── test_preprocessing.py
+│   │   ├── test_sensing.py
+│   │   └── test_web_contracts.py
+│   └── __init__.py
+├── tools/
+│   ├── __init__.py
+│   ├── build_offline_fixture.py
+│   └── csi_record.py
+├── unity/
+│   ├── integration/
+│   │   └── MESSAGE_FORMATS.md
+│   └── project/
+│       └── README.md
+├── visualization/
+│   ├── dashboard/
+│   │   ├── __init__.py
+│   │   └── visualization.py
+│   ├── digital_twin/
+│   │   └── INTERFACE.md
+│   ├── rf/
+│   │   ├── README.md
+│   │   └── csi_viewer_reference.html
+│   └── __init__.py
+├── web/
+│   ├── fixtures/
+│   │   ├── offline_demo.jsonl
+│   │   └── offline_demo.manifest.json
+│   ├── static/
+│   │   ├── css/
+│   │   │   ├── app.css
+│   │   │   └── tokens.css
+│   │   ├── js/
+│   │   │   ├── tabs/
+│   │   │   │   ├── experiments.js
+│   │   │   │   ├── hardware.js
+│   │   │   │   ├── localization.js
+│   │   │   │   ├── models.js
+│   │   │   │   ├── overview.js
+│   │   │   │   ├── rffield.js
+│   │   │   │   ├── sensing.js
+│   │   │   │   ├── settings.js
+│   │   │   │   └── xai.js
+│   │   │   ├── api.js
+│   │   │   ├── app.js
+│   │   │   ├── banner.js
+│   │   │   ├── config.js
+│   │   │   ├── health.js
+│   │   │   ├── scene3d.js
+│   │   │   ├── store.js
+│   │   │   ├── tabs.js
+│   │   │   ├── viz2d.js
+│   │   │   └── ws.js
+│   │   ├── vendor/
+│   │   │   ├── OrbitControls.js
+│   │   │   └── three.module.js
+│   │   └── index.html
+│   ├── __init__.py
+│   ├── contracts.py
+│   ├── server.py
+│   ├── source.py
+│   └── ws.py
+├── .gitattributes
+├── .gitignore
+├── CHANGELOG.md
+├── CONTRIBUTING.md
+├── LICENSE
+├── README.md
+├── RFVISION-FOUNDATION-IMPLEMENTATION-REPORT.md
+├── THIRD_PARTY_NOTICES.md
+├── conftest.py
+├── requirements-base.txt
+├── requirements-dev.txt
+├── requirements-gui.txt
+├── requirements-ml.txt
+└── requirements.lock
