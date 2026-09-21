@@ -140,3 +140,23 @@ hardware → adapter acceptance vector, raw stays external); GUI bring-up
 in a Qt env; calibration dry-run without subjects; freeze
 `requirements.lock`; configure remote + LFS policy. Still no sensing
 claims until CSI-SENSE-001 protocol executes with session-split scoring.
+
+## 23. Analysis-archive consolidation (post-foundation cleanup)
+
+The 12 working documents of RFVISION-REPO-FOUNDATION-001
+(`01_REPOSITORY_INVENTORY.md`, `02_REPO_AUDIT_MATRIX.md`,
+`03_ARCHITECTURE_COMPARISON.md`, `04_COMPONENT_EXTRACTION_MAP.md`,
+`05_CSI_FORMAT_COMPATIBILITY.md`, `06_SCIENTIFIC_CLAIMS_AUDIT.md`,
+`07_LICENSE_AUDIT.md`, `08_DEPENDENCY_AUDIT.md`,
+`09_RFVISION_FOUNDATION_PROPOSAL.md`, `10_THIRD_PARTY_NOTICES_DRAFT.md`,
+`REPOSITORY_SOURCES.json`, `RFVISION-REPO-FOUNDATION-AUDIT.md`) lived in
+`~/Documents/RFVISION-REPO-FOUNDATION-001/` — outside the authoritative
+project. Per the single-source-of-truth rule they were merged into one
+archive, `docs/research/RFVISION-REPO-FOUNDATION-001-ANALYSIS-ARCHIVE.md`
+(pins, inventory, capability matrix, architecture decision, extraction
+map, CSI ruling, claims register, license/dependency verdicts, proposal
+P1–P8, notices-draft promotion note, 16 audit answers), verified against
+the originals (matrix spot-checked cell-by-cell), and the Documents
+folder was deleted. Operative content already lives in the canonical
+docs; the archive is read-only history. No code or test changes in this
+cleanup; suite re-run green before commit.
