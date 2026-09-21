@@ -1,0 +1,40 @@
+# RF Vision — reproducible dependency lock (RFVISION-003, Phase 2)
+#
+# Validated environment:
+#   Python 3.14.4 | Ubuntu 26.04.1 LTS | kernel 7.0.0-31-generic
+#   ESP-IDF v5.4.4 (validated baseline; toolchain NOT installed here —
+#   no firmware build/flash in this env) | ESP-CSI 8633d67152db2808f141cc1595970aa9cf406045
+#   Qt 6.11.2 via PyQt6 wheels (installed with --user into ~/.local)
+#
+# Policy: install with `python3 -m pip install -r requirements.lock`.
+# Regenerate with `python3 -m pip freeze` after any deliberate change and
+# record the reason in the phase report. Do NOT upgrade blindly.
+# Sections: base+dev (test suite), gui (dashboard, validated 003),
+# ml (torch ABSENT — KNN/RF baselines only).
+#
+# --- base (requirements-base.txt, all validated by tests/ 68/68) ---
+joblib==1.6.0
+matplotlib==3.11.2
+numpy==2.5.3
+pandas==3.0.6
+pyserial==3.5
+PyYAML==6.0.3
+scikit-learn==1.9.1
+scipy==1.18.1
+# --- base transitive (pinned as observed) ---
+contourpy==1.4.0
+cycler==0.12.1
+fonttools==4.65.0
+kiwisolver==1.5.1
+packaging==26.3
+pillow==12.1.1
+pyparsing==3.3.2
+python-dateutil==2.9.0.post0
+threadpoolctl==3.7.0
+# --- dev (requirements-dev.txt) ---
+pytest==9.1.1
+# --- gui (requirements-gui.txt, bring-up validated RFVISION-003 Phase 5) ---
+PyQt6==6.11.0
+PyQt6-Qt6==6.11.2
+PyQt6_sip==13.12.0
+# --- ml (requirements-ml.txt): torch NOT INSTALLED in this env ---
