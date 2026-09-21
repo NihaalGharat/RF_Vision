@@ -1,0 +1,7 @@
+{
+  "operation": "RFVISION-003R-C2",
+  "status": "PASS",
+  "files": ["csi_golden_60s_b03fd3203c_921600.bin", "csi_golden_60s_b03fd3203c_921600.bin.sha256", "capture_metadata.json", "validation.json", "manifest.json"],
+  "raw_in_git": false,
+  "note": "raw capture lives outside version control by policy; this directory is gitignored"
+}

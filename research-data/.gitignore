@@ -1,0 +1,7 @@
+# research-data/ is outside version control by project policy.
+# Raw captures must never be staged in Git. Documentation references
+# them by path + SHA-256 only.
+*
+!.gitignore
+!*/
+!rfvision-003r-c2/*.json

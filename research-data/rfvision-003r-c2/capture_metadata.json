@@ -1,0 +1,16 @@
+{
+  "operation": "RFVISION-003R-C2",
+  "board_mac": "b0:3f:d3:70:20:3c",
+  "board": "ESP32-D0WD-V3 Rev 3.1, 4 MB flash, CP2102 s/n 0001",
+  "firmware_commit": "8633d67152db2808f141cc1595970aa9cf406045",
+  "idf_commit": "296b6eab9445fd720e71aecb961e2d3fbca9944",
+  "app_binary_sha256": "bc7a5cd586c6e9e136607a042760aa2d2b939fa671a38ff64aa6eb5b4927e321",
+  "serial": "/dev/ttyUSB0 @ 921600 8N1",
+  "capture_file": "csi_golden_60s_b03fd3203c_921600.bin",
+  "capture_bytes": 2197175,
+  "capture_sha256": "944668b317dd395a1edf157230e95fac1eace6e9c4ae38c77c8cd9b494f13459",
+  "nominal_duration_s": 62,
+  "session": "single continuous open, no board reset, 3 s clean peek (294 records, 0 tails) then uninterrupted capture",
+  "conditions": "same router, position, USB port, cable, firmware, Wi-Fi config as C1; ambient room, no human subject, no deliberate movement, no heavy traffic",
+  "clock_note": "host UTC vs journal clock skew observed (~hours); durations measured by monotonic timers, ordering proven by firmware seq continuity"
+}
