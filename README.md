@@ -72,7 +72,16 @@ from Git history."
 ## Setup (Linux)
 
 ```bash
-python3 -m venv .venv && source .venv/bin/activate
+git clone https://github.com/NihaalGharat/RF_Vision.git
+cd RF_Vision
+./tools/run_rfvision_ui.sh
+```
+
+Interactive RF console (local-only): `http://127.0.0.1:8130/`
+(tabs: Overview, Sensing, RF Field, Hardware, Localization, XAI,
+Experiments, Settings). Python dependencies:
+
+```bash
 pip install -r requirements-base.txt        # capture → features → sensing → sklearn ML
 pip install -r requirements-gui.txt         # live Qt dashboard (optional)
 pip install -r requirements-ml.txt          # PyTorch MLP (optional, CPU)
@@ -86,7 +95,7 @@ foundation work.
 ## Running tests
 
 ```bash
-python3 -m pytest tests/ -q        # 68 tests, stdlib+numpy+sklearn, no hardware
+python3 -m pytest tests/ -q        # 128 tests, stdlib+numpy+sklearn, no hardware
 ```
 
 Headless realtime inference (needs the ESP32 on USB):
