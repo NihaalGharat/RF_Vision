@@ -41,6 +41,7 @@ from __future__ import annotations
 
 import json
 import math
+import time
 from dataclasses import dataclass
 from typing import List, Optional, Sequence, Tuple
 
@@ -89,6 +90,9 @@ class CsiSample:
     mac: str
     first_word_invalid: bool
     csi: np.ndarray           # int8 array (real, imag pairs), raw values
+    ts_host_ns: Optional[int] = None  # host ingress stamp (monotonic ns);
+                                      # None only for samples built before
+                                      # this field existed (old code paths)
 
     @property
     def n_subcarriers(self) -> int:
@@ -103,11 +107,14 @@ class CsiSample:
 
 
 
-def parse_line(line: str, local_ts: float) -> Optional[CsiSample]:
+def parse_line(line: str, local_ts: float,
+               ts_host_ns: Optional[int] = None) -> Optional[CsiSample]:
     """Parse one serial line into a :class:`CsiSample`.
 
     Returns ``None`` for blank lines and ``#``-prefixed status lines.
     Raises :class:`PacketError` for malformed or inconsistent packets.
+    ``ts_host_ns`` should be stamped at serial ingress; when omitted it is
+    stamped here (still host-side, slightly later).
     """
     text = line.strip()
     if not text:
@@ -153,6 +160,8 @@ def parse_line(line: str, local_ts: float) -> Optional[CsiSample]:
         sample = CsiSample(
             ts_esp32_us=int(obj["timestamp"]),
             ts_local=float(local_ts),
+            ts_host_ns=(int(ts_host_ns) if ts_host_ns is not None
+                        else time.monotonic_ns()),
             seq=int(obj.get("seq", 0)),
             rssi=int(obj["rssi"]),
             channel=int(obj["channel"]),

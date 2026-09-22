@@ -28,6 +28,12 @@ export const OverviewTab = {
           validated. Telemetry above is transport + signal only.</p></div>
         <div class="card"><h3>Latest frame</h3>
           <div class="kv" id="ov-frame"></div></div>
+        <div class="card"><h3>Nodes — two-node telemetry</h3>
+          <div class="kv" id="ov-sync"></div>
+          <div class="kv" id="ov-node-a"></div>
+          <div class="kv" id="ov-node-b"></div>
+          <p class="caveat">Localization not validated: zones stay
+          AWAITING VALIDATED LOCALIZATION DATA.</p></div>
       </div>`;
     this.refresh();
     this._timer = setInterval(() => this.refresh(), 2000);
@@ -52,16 +58,20 @@ export const OverviewTab = {
     }
   },
   async refresh() {
-    let status = null, exp = null, live = null;
+    let status = null, exp = null, live = null, nodes = null;
     try {
       [status, exp] = await Promise.all([api.status(), api.experiment()]);
     } catch { /* unreachable backend */ }
     try {
       live = await api.live();
     } catch { live = null; }
+    try {
+      nodes = await api.nodes();
+    } catch { nodes = null; }
     this._status = status;
     this._exp = exp;
     this._live = live && live.available ? live : null;
+    this._nodes = nodes && nodes.available ? nodes : null;
     this.renderAll();
   },
   renderHero() {
@@ -121,7 +131,41 @@ export const OverviewTab = {
       ["xai", `<span class="unknown">NOT AVAILABLE</span>`],
       ["models", `<span class="unknown">NO VALIDATED MODELS</span>`],
     ]);
+    this.renderNodes();
     this.renderFrame();
+  },
+  renderNodes() {
+    const N = this._nodes;
+    if (!N) {
+      const standby = `<span class="unknown">STANDBY (dual session not started)</span>`;
+      this.kv("ov-sync", [["sync", standby]]);
+      this.kv("ov-node-a", [["node A", standby]]);
+      this.kv("ov-node-b", [["node B", standby]]);
+      return;
+    }
+    this.kv("ov-sync", [["sync state", N.sync_state]]);
+    const byId = {};
+    for (const n of (N.nodes || [])) byId[n.node_id] = n;
+    for (const [slot, id] of [["ov-node-a", "esp32-a"], ["ov-node-b", "esp32-b"]]) {
+      const n = byId[id];
+      if (!n) {
+        this.kv(slot, [[id, `<span class="unknown">NO DATA</span>`]]);
+        continue;
+      }
+      const us = (v) => (v != null ? `${(v / 1000).toFixed(1)} ms` : "UNKNOWN");
+      this.kv(slot, [
+        ["state", n.connection],
+        ["rate", num(n.csi_rate, (v) => `${v.toFixed(1)} Hz`)],
+        ["valid", n.valid_pct != null ? `${n.valid_pct.toFixed(2)} % (${n.valid})` : "UNKNOWN"],
+        ["rssi", n.rssi != null ? `${n.rssi} dBm` : "UNKNOWN"],
+        ["seq gaps / dup / ooo", `${n.gaps} / ${n.duplicates} / ${n.out_of_order}`],
+        ["channel / bssid", `${n.channel != null ? "CH " + n.channel : "?"} · ${n.bssid || "?"}`],
+        ["tones", n.tones != null ? `${n.tones}` : "UNKNOWN"],
+        ["sync offset / jitter", `${us(n.sync_offset_ns)} / ${us(n.sync_jitter_ns)}`],
+        ["pipe (host)", n.host_pipeline_us_mean != null
+          ? `${n.host_pipeline_us_mean.toFixed(0)} µs mean` : "UNKNOWN"],
+      ]);
+    }
   },
   renderFrame() {
     const ev = this._last;

@@ -60,12 +60,15 @@ class AdapterStats:
         return out
 
 
-def parse_esp_csv_line(line: str, local_ts: Optional[float] = None) -> CsiSample:
+def parse_esp_csv_line(line: str, local_ts: Optional[float] = None,
+                       ts_host_ns: Optional[int] = None) -> CsiSample:
     """Parse one ``CSI_DATA,...`` line into a :class:`CsiSample`.
 
     Raises :class:`PacketError` on any structural problem (wrong tag,
     wrong column count, non-integer fields, payload length mismatch,
     out-of-range I/Q values).
+    ``ts_host_ns`` should be stamped at serial ingress; when omitted it is
+    stamped here (still host-side, slightly later).
     """
     text = line.strip()
     if not text:
@@ -127,6 +130,8 @@ def parse_esp_csv_line(line: str, local_ts: Optional[float] = None) -> CsiSample
     return CsiSample(
         ts_esp32_us=local_timestamp,
         ts_local=float(local_ts if local_ts is not None else time.time()),
+        ts_host_ns=(int(ts_host_ns) if ts_host_ns is not None
+                    else time.monotonic_ns()),
         seq=seq,
         rssi=rssi,
         channel=channel,
@@ -158,7 +163,8 @@ class EspCsvAdapter:
         self.stats = AdapterStats()
 
     def handle_line(self, line: str,
-                    local_ts: Optional[float] = None) -> Optional[CsiSample]:
+                    local_ts: Optional[float] = None,
+                    ts_host_ns: Optional[int] = None) -> Optional[CsiSample]:
         """Parse one line; ``None`` for blanks/non-CSI lines.
 
         Raises :class:`PacketError` for structurally invalid CSI_DATA lines
@@ -169,7 +175,7 @@ class EspCsvAdapter:
             return None
         self.stats.lines_seen += 1
         try:
-            sample = parse_esp_csv_line(text, local_ts)
+            sample = parse_esp_csv_line(text, local_ts, ts_host_ns)
         except PacketError:
             self.stats.reject("malformed")
             raise

@@ -14,6 +14,7 @@ Endpoints (all JSON unless noted):
 - ``GET /api/v1/stream/status`` + ``POST /api/v1/stream/start|stop``
 - ``POST /api/v1/source {"mode": off|fixture|simulated|live}``
 - ``GET /api/v1/live`` — live session telemetry (or available:false)
+- ``GET /api/v1/nodes`` — two-node telemetry (or available:false, contract v2)
 - ``POST /api/v1/live/record/start|stop`` — bounded diagnostic capture
 - ``GET /api/v1/experiment|calibration|localization|xai``
 - ``GET /ws/sensing`` (Upgrade: websocket) — envelope stream + commands:
@@ -40,7 +41,8 @@ from web import source as sources
 from web import ws as ws_codec
 
 __all__ = ["DEFAULT_PORT", "ConsoleState", "ConsoleHandler",
-           "build_server", "main", "BASELINE", "FIRMWARE"]
+           "build_server", "main", "BASELINE", "FIRMWARE",
+           "set_dual_session", "dual_status_payload"]
 
 DEFAULT_PORT = 8130
 STALE_AFTER_S = 3.0
@@ -206,6 +208,67 @@ class ConsoleState:
 
 STATE = ConsoleState()
 
+#: Attached two-node session (None = single-node / dual not started).
+#: Set via :func:`set_dual_session`; read by GET /api/v1/nodes.
+DUAL = None
+
+
+def set_dual_session(session) -> None:
+    """Attach (or detach with None) the live DualNodeSession."""
+    global DUAL
+    DUAL = session
+
+
+def dual_status_payload() -> Dict[str, Any]:
+    """Build the GET /api/v1/nodes payload from the attached session."""
+    if DUAL is None:
+        return contracts.nodes_payload(
+            available=False, session=None, sync_state="UNSYNCED",
+            nodes=[],
+            reason="dual session not started (single-node operation)")
+    info = DUAL.session_stats()
+    sync = info.get("sync", {})
+    entries = []
+    for nid, node in info.get("per_node", {}).items():
+        stream = node.get("stream", {})
+        signal = node.get("signal", {})
+        timing = node.get("timing", {})
+        sync_n = node.get("sync", {})
+        valid = int(stream.get("valid", 0))
+        if node.get("source_state") in ("LIVE_VERIFIED",):
+            connection = ("SYNCED" if sync.get("state") == "SYNCED"
+                          else "LIVE")
+        elif node.get("source_state") == "LIVE_UNVERIFIED":
+            connection = "SYNCING"
+        elif node.get("source_state") == "DISCONNECTED":
+            connection = "DISCONNECTED"
+        else:
+            connection = "DEGRADED"
+        entries.append(contracts.node_status_payload(
+            node_id=nid, board_mac=node.get("board_mac", "UNKNOWN"),
+            port=node.get("port", "UNKNOWN"), connection=connection,
+            source_state=node.get("source_state", "DISCONNECTED"),
+            csi_rate=stream.get("rate_hz"), valid=valid,
+            valid_pct=stream.get("valid_pct"),
+            malformed=int(stream.get("malformed", 0)),
+            duplicates=int(stream.get("duplicates", 0)),
+            out_of_order=int(stream.get("out_of_order", 0)),
+            gaps=int(stream.get("gaps", 0)),
+            rssi=signal.get("rssi_last"), channel=signal.get("channel"),
+            bssid=signal.get("bssid"), tones=signal.get("tones"),
+            host_pipeline_us_mean=timing.get("host_pipeline_us_mean"),
+            esp_latency_us=timing.get("esp_to_host_latency_us"),
+            sync_ready=bool(sync_n.get("ready", False)),
+            sync_offset_ns=sync_n.get("offset_ns"),
+            sync_jitter_ns=sync_n.get("jitter_ns"),
+            sync_observations=int(sync_n.get("observations", 0))))
+    return contracts.nodes_payload(
+        available=True,
+        session={"nodes": list(info.get("nodes", [])),
+                 "elapsed_s": info.get("elapsed_s")},
+        sync_state=sync.get("state", "UNSYNCED"), nodes=entries,
+        reason=None)
+
 
 class ConsoleHandler(BaseHTTPRequestHandler):
     """HTTP API + static files + WS upgrade on /ws/sensing."""
@@ -347,6 +410,8 @@ class ConsoleHandler(BaseHTTPRequestHandler):
                         "position_m": None}]))
         elif path == "/api/v1/xai":
             self._json(contracts.xai_payload(available=False))
+        elif path == "/api/v1/nodes":
+            self._json(dual_status_payload())
         elif path == "/api/v1/live":
             live = (STATE.provider if STATE.provider.mode == "live"
                     else None)

@@ -54,4 +54,5 @@ export const api = {
   calibration: () => request("GET", "/api/v1/calibration"),
   localization: () => request("GET", "/api/v1/localization"),
   xai: () => request("GET", "/api/v1/xai"),
+  nodes: () => request("GET", "/api/v1/nodes"),
 };

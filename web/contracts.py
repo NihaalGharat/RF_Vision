@@ -36,11 +36,15 @@ __all__ = [
     "calibration_payload",
     "localization_payload",
     "xai_payload",
+    "node_status_payload",
+    "nodes_payload",
     "validate_envelope",
 ]
 
 #: Contract version served at GET /api/v1/health (bump on payload change).
-CONTRACT_VERSION = 1
+#: v2 adds the two-node ``/api/v1/nodes`` payloads (additive: every v1
+#: builder keeps its exact shape).
+CONTRACT_VERSION = 2
 
 #: Allowed data-provenance states (operation §6). No other value may be
 #: emitted or accepted.
@@ -279,6 +283,74 @@ def xai_payload(*, available: bool, method: Optional[str] = None,
         "caveats": caveats,
         "scores": dict(scores or {}),
         "top_k": list(top_k or []),
+    }
+
+
+def node_status_payload(*, node_id: str, board_mac: str, port: str,
+                          connection: str, source_state: str,
+                          csi_rate: Optional[float],
+                          valid: int, valid_pct: Optional[float],
+                          malformed: int, duplicates: int,
+                          out_of_order: int, gaps: int,
+                          rssi: Optional[float],
+                          channel: Optional[int], bssid: Optional[str],
+                          tones: Optional[int],
+                          host_pipeline_us_mean: Optional[float],
+                          esp_latency_us: Optional[float] = None,
+                          sync_ready: bool = False,
+                          sync_offset_ns: Optional[float] = None,
+                          sync_jitter_ns: Optional[float] = None,
+                          sync_observations: int = 0) -> Dict[str, Any]:
+    """GET /api/v1/nodes → one entry per receiver node (contract v2).
+
+    All metrics are measured; ``esp_latency_us`` is None until a common
+    clock supports a real estimate (never fabricated). ``sync_*`` comes
+    from the node's offset estimator.
+    """
+    if connection not in ("LIVE", "SYNCING", "SYNCED", "DEGRADED",
+                          "DISCONNECTED", "STANDBY"):
+        raise ContractError(f"bad node connection: {connection!r}")
+    if valid_pct is not None and not 0.0 <= float(valid_pct) <= 100.0:
+        raise ContractError(f"valid_pct outside [0,100]: {valid_pct!r}")
+    return {
+        "node_id": str(node_id),
+        "board_mac": str(board_mac),
+        "port": str(port),
+        "connection": connection,
+        "source_state": require_source_state(source_state),
+        "csi_rate": _num(csi_rate, "csi_rate", allow_none=True),
+        "valid": int(valid),
+        "valid_pct": valid_pct,
+        "malformed": int(malformed),
+        "duplicates": int(duplicates),
+        "out_of_order": int(out_of_order),
+        "gaps": int(gaps),
+        "rssi": rssi,
+        "channel": channel,
+        "bssid": bssid,
+        "tones": tones,
+        "host_pipeline_us_mean": host_pipeline_us_mean,
+        "esp_latency_us": esp_latency_us,
+        "sync_ready": bool(sync_ready),
+        "sync_offset_ns": sync_offset_ns,
+        "sync_jitter_ns": sync_jitter_ns,
+        "sync_observations": int(sync_observations),
+    }
+
+
+def nodes_payload(*, available: bool, session: Optional[Dict[str, Any]],
+                    sync_state: str = "UNSYNCED",
+                    nodes: Optional[List[Dict[str, Any]]] = None,
+                    reason: Optional[str] = None) -> Dict[str, Any]:
+    """GET /api/v1/nodes — dual-session telemetry (contract v2)."""
+    if sync_state not in ("UNSYNCED", "SYNCING", "SYNCED"):
+        raise ContractError(f"bad sync_state: {sync_state!r}")
+    return {
+        "available": bool(available),
+        "sync_state": sync_state,
+        "nodes": list(nodes or []),
+        "session": session,
+        "reason": reason,
     }
 
 

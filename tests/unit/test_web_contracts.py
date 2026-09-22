@@ -129,6 +129,41 @@ class PayloadSchemaTests(unittest.TestCase):
                 frame="link-1d", position=None, position_m=None, raw=None,
                 uncertainty=-1.0, room_width_m=None, sync="NONE", nodes=[])
 
+    def test_nodes_v2_additive(self):
+        self.assertEqual(contracts.CONTRACT_VERSION, 2)
+        node = contracts.node_status_payload(
+            node_id="esp32-a", board_mac="b0:3f:d3:70:20:3c",
+            port="/dev/ttyUSB1", connection="SYNCED",
+            source_state="LIVE_VERIFIED", csi_rate=93.3,
+            valid=42053, valid_pct=99.99, malformed=4, duplicates=0,
+            out_of_order=1, gaps=2, rssi=-54, channel=1,
+            bssid="8c:53:c3:5b:e1:59", tones=62,
+            host_pipeline_us_mean=120.5, esp_latency_us=None,
+            sync_ready=True, sync_offset_ns=1000.0,
+            sync_jitter_ns=500.0, sync_observations=64)
+        self.assertEqual(node["node_id"], "esp32-a")
+        self.assertIsNone(node["esp_latency_us"])  # never fabricated
+        payload = contracts.nodes_payload(
+            available=True, session={"nodes": ["esp32-a"]},
+            sync_state="SYNCED", nodes=[node], reason=None)
+        self.assertTrue(payload["available"])
+        off = contracts.nodes_payload(
+            available=False, session=None, sync_state="UNSYNCED",
+            nodes=[], reason="dual session not started")
+        self.assertFalse(off["available"])
+        with self.assertRaises(ContractError):  # bad connection token
+            contracts.node_status_payload(
+                node_id="x", board_mac="y", port="z",
+                connection="QUANTUM", source_state="LIVE_VERIFIED",
+                csi_rate=None, valid=0, valid_pct=None, malformed=0,
+                duplicates=0, out_of_order=0, gaps=0, rssi=None,
+                channel=None, bssid=None, tones=None,
+                host_pipeline_us_mean=None)
+        with self.assertRaises(ContractError):  # bad sync token
+            contracts.nodes_payload(
+                available=True, session=None, sync_state="LOCKED",
+                nodes=[])
+
     def test_xai_unavailable_by_default(self):
         payload = contracts.xai_payload(available=False)
         self.assertEqual(payload, {"available": False,

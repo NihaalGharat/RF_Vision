@@ -259,6 +259,8 @@ class LiveProvider:
         self._last_seq: Optional[int] = None
         self._gaps = 0
         self._missing: List[int] = []
+        self._duplicates = 0
+        self._out_of_order = 0
         self._channels: Dict[int, int] = {}
         self._bssids: Dict[str, int] = {}
         self._rssi: collections.deque = collections.deque(
@@ -344,7 +346,8 @@ class LiveProvider:
         self._bytes_start = getattr(source, "bytes_read", 0)
         return source
 
-    def _ingest(self, line: str) -> None:
+    def _ingest(self, line: str,
+                rx_ns: Optional[int] = None) -> None:
         text = line.strip()
         if not text:
             return
@@ -364,7 +367,8 @@ class LiveProvider:
             self._record_raw(line)
             return
         try:
-            sample = self._adapter.handle_line(text, time.time())
+            sample = self._adapter.handle_line(text, time.time(),
+                                               ts_host_ns=rx_ns)
         except PacketError as exc:
             self._malformed += 1
             self._malformed_recent.append(f"{str(exc)[:120]} :: "
@@ -383,12 +387,26 @@ class LiveProvider:
             sample.channel, 0) + 1
         mac = str(sample.mac).lower()
         self._bssids[mac] = self._bssids.get(mac, 0) + 1
-        if self._last_seq is not None and sample.seq > self._last_seq + 1:
+        if self._last_seq is None:
+            self._last_seq = sample.seq
+        elif sample.seq > self._last_seq + 1:
             self._gaps += 1
             if len(self._missing) < 32:
                 self._missing.extend(
                     range(self._last_seq + 1, sample.seq))
-        self._last_seq = sample.seq
+            self._last_seq = sample.seq
+        elif sample.seq == self._last_seq + 1:
+            # Normal in-order arrival: just advance the anchor.
+            self._last_seq = sample.seq
+        elif sample.seq == self._last_seq:
+            # Exact repeat of the previous sequence: duplicate delivery
+            # (counted, never silently absorbed).
+            self._duplicates += 1
+        else:
+            # Older than the previous sequence: out-of-order delivery.
+            # _last_seq is NOT moved backwards so gap detection stays
+            # anchored to the newest sequence seen.
+            self._out_of_order += 1
         self._record_raw(line)
         self._note_bytes()
         self._maybe_settle()
@@ -576,7 +594,9 @@ class LiveProvider:
             for line in source.iter_lines():
                 if self._stop:
                     break
-                self._ingest(line)
+                self._ingest(
+                    line,
+                    getattr(source, "last_line_rx_ns", None))
                 event = self._maybe_frame()
                 if event is not None:
                     yield event
@@ -705,6 +725,8 @@ class LiveProvider:
                 "last_seq": self._last_seq,
                 "gaps": self._gaps,
                 "missing": list(self._missing[:32]),
+                "duplicates": self._duplicates,
+                "out_of_order": self._out_of_order,
                 "last_update_age_s": age,
                 "stale": (age is not None and age > self.stale_after_s),
                 "session_s": elapsed},

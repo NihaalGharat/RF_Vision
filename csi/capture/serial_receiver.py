@@ -64,7 +64,7 @@ class RawSessionWriter:
     """
 
     META_FIELDS = (
-        "ts_local", "ts_esp32_us", "ts_wifi_us", "seq", "rssi", "channel",
+        "ts_local", "ts_host_ns", "ts_esp32_us", "ts_wifi_us", "seq", "rssi", "channel",
         "secondary_channel", "sig_mode", "mcs", "cwb", "rate", "aggregation",
         "stbc", "fec_coding", "sgi", "noise_floor", "ampdu_cnt", "sig_len",
         "rx_state", "ant", "mac", "first_word_invalid", "csi_len",
@@ -110,7 +110,10 @@ class RawSessionWriter:
     @staticmethod
     def _meta_row(s: CsiSample) -> list:
         return [
-            f"{s.ts_local:.6f}", s.ts_esp32_us, s.ts_wifi_us, s.seq, s.rssi,
+            f"{s.ts_local:.6f}",
+            ("" if getattr(s, "ts_host_ns", None) is None
+             else int(getattr(s, "ts_host_ns"))),
+            s.ts_esp32_us, s.ts_wifi_us, s.seq, s.rssi,
             s.channel, s.secondary_channel, s.sig_mode, s.mcs, s.cwb, s.rate,
             s.aggregation, s.stbc, s.fec_coding, s.sgi, s.noise_floor,
             s.ampdu_cnt, s.sig_len, s.rx_state, s.ant, s.mac,
@@ -235,8 +238,9 @@ class SerialReceiver(threading.Thread):
         if text.startswith("#CSI "):
             json_part = text[len("#CSI "):]
             ts = time.time()
+            rx_ns = time.monotonic_ns()
             try:
-                sample = parse_line(json_part, ts)
+                sample = parse_line(json_part, ts, ts_host_ns=rx_ns)
             except PacketError as exc:
                 self.malformed += 1
                 LOG.warning("malformed packet #%d: %s", self.malformed, exc)

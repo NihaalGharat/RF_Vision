@@ -127,6 +127,72 @@ class ConsoleServerTests(unittest.TestCase):
         code, _ = self.post("/api/v1/source", {"mode": "quantum"})
         self.assertEqual(code, 400)
 
+    def test_nodes_endpoint_reports_standby_without_dual(self):
+        # No dual session attached in this test server: honest standby.
+        code, data = self.get("/api/v1/nodes")
+        self.assertEqual(code, 200)
+        self.assertFalse(data["available"])
+        self.assertEqual(data["nodes"], [])
+        self.assertEqual(data["sync_state"], "UNSYNCED")
+        self.assertTrue(data["reason"])
+
+    def test_nodes_endpoint_serves_attached_session(self):
+        stub_stats = {
+            "nodes": ("esp32-a", "esp32-b"),
+            "elapsed_s": 12.5,
+            "per_node": {
+                "esp32-a": {
+                    "board_mac": "b0:3f:d3:70:20:3c",
+                    "port": "/dev/ttyUSB1",
+                    "source_state": "LIVE_VERIFIED",
+                    "stream": {"rate_hz": 93.3, "valid": 100,
+                               "valid_pct": 100.0, "malformed": 0,
+                               "duplicates": 0, "out_of_order": 0,
+                               "gaps": 0},
+                    "signal": {"rssi_last": -54, "channel": 1,
+                               "bssid": "8c:53:c3:5b:e1:59",
+                               "tones": 62},
+                    "timing": {"host_pipeline_us_mean": 120.0,
+                               "esp_to_host_latency_us": None},
+                    "sync": {"ready": True, "offset_ns": 1000.0,
+                             "jitter_ns": 500.0, "observations": 64}},
+                "esp32-b": {
+                    "board_mac": "04:b2:47:20:1a:dc",
+                    "port": "/dev/ttyUSB0",
+                    "source_state": "LIVE_UNVERIFIED",
+                    "stream": {"rate_hz": None, "valid": 0,
+                               "valid_pct": None, "malformed": 0,
+                               "duplicates": 0, "out_of_order": 0,
+                               "gaps": 0},
+                    "signal": {"rssi_last": None, "channel": None,
+                               "bssid": None, "tones": None},
+                    "timing": {"host_pipeline_us_mean": None,
+                               "esp_to_host_latency_us": None},
+                    "sync": {"ready": False, "offset_ns": None,
+                             "jitter_ns": None, "observations": 3}}},
+            "sync": {"state": "SYNCING"},
+        }
+
+        class StubDual:
+            def session_stats(self):
+                return stub_stats
+
+        orig = console.DUAL
+        console.set_dual_session(StubDual())
+        try:
+            code, data = self.get("/api/v1/nodes")
+        finally:
+            console.set_dual_session(orig)
+        self.assertEqual(code, 200)
+        self.assertTrue(data["available"])
+        self.assertEqual(data["sync_state"], "SYNCING")
+        by_id = {n["node_id"]: n for n in data["nodes"]}
+        self.assertEqual(set(by_id), {"esp32-a", "esp32-b"})
+        self.assertEqual(by_id["esp32-a"]["connection"], "LIVE")
+        self.assertEqual(by_id["esp32-b"]["connection"], "SYNCING")
+        self.assertIsNone(by_id["esp32-a"]["esp_latency_us"])
+        self.assertEqual(by_id["esp32-a"]["tones"], 62)
+
     def test_fixture_source_and_stream(self):
         code, data = self.post("/api/v1/source", {"mode": "fixture"})
         self.assertEqual(code, 200)

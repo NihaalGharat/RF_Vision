@@ -61,6 +61,49 @@ class TestSync(unittest.TestCase):
         est.observe(0.0, 99999.0)
         self.assertAlmostEqual(est.offset, 100.0)
 
+    def test_jitter_none_then_mad(self):
+        est = ClockOffsetEstimator(window=8)
+        self.assertIsNone(est.jitter)
+        est.observe(0.0, 100.0)
+        self.assertIsNone(est.jitter)
+        for v in (100.0, 102.0, 98.0):
+            est.observe(0.0, v)
+        # window = [100,100,102,98] → median 100, MAD = median(0,0,2,2) = 1
+        self.assertAlmostEqual(est.jitter, 1.0)
+
+    def test_jitter_robust_to_outlier(self):
+        est = ClockOffsetEstimator(window=5)
+        for _ in range(4):
+            est.observe(0.0, 100.0)
+        est.observe(0.0, 99999.0)
+        self.assertAlmostEqual(est.jitter, 0.0)
+
+    def test_drift_zero_for_locked_clocks(self):
+        est = ClockOffsetEstimator(window=8)
+        self.assertIsNone(est.drift_per_sample)
+        for i in range(6):
+            est.observe(device_ts=1000.0 + i, host_ts=5000.0 + i)
+        self.assertAlmostEqual(est.drift_per_sample, 0.0)
+
+    def test_drift_detects_rate_mismatch(self):
+        est = ClockOffsetEstimator(window=10)
+        for i in range(8):  # host gains 0.5 units per device unit
+            est.observe(device_ts=float(i), host_ts=100.0 + 1.5 * i)
+        self.assertAlmostEqual(est.drift_per_sample, 0.5)
+
+    def test_stable_predicate(self):
+        est = ClockOffsetEstimator(window=8)
+        self.assertFalse(est.stable(max_jitter=5.0, min_n=4))
+        for v in (100.0, 102.0, 100.0):
+            est.observe(0.0, v)
+        self.assertFalse(est.stable(max_jitter=5.0, min_n=4))
+        est.observe(0.0, 98.0)  # window MAD = 1.0
+        self.assertTrue(est.stable(max_jitter=5.0, min_n=4))
+        self.assertFalse(est.stable(max_jitter=0.5, min_n=4))
+        est.reset()
+        self.assertEqual(est.n, 0)
+        self.assertFalse(est.stable(max_jitter=5.0, min_n=4))
+
 
 if __name__ == "__main__":
     unittest.main()

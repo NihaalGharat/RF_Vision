@@ -58,6 +58,9 @@ class SerialLineSource:
         self.bytes_read = 0
         self.overlong_dropped = 0
         self.opened_at: Optional[float] = None
+        #: Monotonic-ns stamp of the most recently yielded line (ingress
+        #: time, for two-node host-side alignment). None before first line.
+        self.last_line_rx_ns: Optional[int] = None
 
     # -- lifecycle ---------------------------------------------------
     def open(self) -> "SerialLineSource":
@@ -151,6 +154,7 @@ class SerialLineSource:
                     break
                 raw = bytes(buf[:nl + 1])
                 del buf[:nl + 1]
+                self.last_line_rx_ns = time.monotonic_ns()
                 yield raw.decode("ascii", errors="replace")
 
 
@@ -177,6 +181,7 @@ class FakeLineSource:
         self.overlong_dropped = 0
         self.opened_at: Optional[float] = None
         self.closed = False
+        self.last_line_rx_ns: Optional[int] = None
 
     def open(self) -> "FakeLineSource":
         self._open = True
@@ -201,6 +206,7 @@ class FakeLineSource:
             pace = self._pace_s(idx) if callable(self._pace_s) else self._pace_s
             if pace > 0:
                 time.sleep(pace)
+            self.last_line_rx_ns = time.monotonic_ns()
             if isinstance(line, bytes):
                 self.bytes_read += len(line)
                 yield line.decode("ascii", errors="replace")
