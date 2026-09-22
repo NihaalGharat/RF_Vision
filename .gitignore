@@ -32,12 +32,22 @@ unity/project/Library/
 unity/project/Temp/
 unity/project/Obj/
 unity/project/Build/
+# Build intermediates / native objects
+*.o
+*.a
+*.map
+dist/
+# IDF component-manager output (rebuildable via idf.py build)
+managed_components/
 # Secrets — never commit
 .env
+.env.*
+credentials*
 *password*
 *secret*
 *token*
 *.pem
+*.key
 # OS / editor
 .DS_Store
 Thumbs.db
