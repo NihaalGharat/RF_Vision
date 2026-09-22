@@ -1,0 +1,19 @@
+cff-version: 1.2.0
+title: RF Vision
+message: >-
+  If you use RF Vision in your research, please cite this repository.
+type: software
+license: MIT
+repository-code: https://github.com/NihaalGharat/RF_Vision
+abstract: >-
+  Privacy-preserving Wi-Fi Channel State Information (CSI) research
+  platform for RF sensing, signal processing, localization, explainable
+  AI, and interactive RF visualization. All processing is local.
+keywords:
+  - wi-fi-csi
+  - rf-sensing
+  - signal-processing
+  - localization
+  - explainable-ai
+authors:
+  - name: RF Vision Contributors
