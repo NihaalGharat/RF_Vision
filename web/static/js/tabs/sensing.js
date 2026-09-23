@@ -3,9 +3,8 @@
    No human-presence, position, or activity claims exist here: presence /
    activity cards are explicitly NOT VALIDATED until CSI-SENSE. Phase is
    gated by the amplitude-only pipeline decision and labelled as such. */
-import { drawHeatmap, drawSparkline, drawBars, drawLine, placeholder } from "../viz2d.js";
-import { api } from "../api.js";
-import { pillFor, fmtUnknown } from "../banner.js";
+import { drawHeatmap, drawSparkline, drawBars, drawLine, placeholder, describe } from "../viz2d.js";
+import { pillFor, fmtUnknown, fetchErrors } from "../banner.js";
 
 const AMP_ROWS = 40;
 const RSSI_N = 120;
@@ -23,45 +22,45 @@ export const SensingTab = {
         <div class="card"><h3>Signal validity — live gate</h3>
           <div class="kv" id="sn-valid"></div></div>
         <div class="card"><h3>Subcarrier amplitude — latest frame</h3>
-          <canvas class="viz" id="sn-amp"></canvas></div>
+          <canvas class="viz" id="sn-amp" role="img" aria-label="Latest amplitude frame chart. No data yet."></canvas></div>
         <div class="card"><h3>RSSI (dBm)</h3>
-          <canvas class="viz" id="sn-rssi"></canvas></div>
+          <canvas class="viz" id="sn-rssi" role="img" aria-label="RSSI history chart. No data yet."></canvas></div>
       </div>
-      <div class="grid" style="margin-top:12px">
-        <div class="card" style="grid-column: span 2">
+      <div class="grid grid-gap">
+        <div class="card span2">
           <h3>Subcarrier amplitude heatmap (latest ${AMP_ROWS} frames)</h3>
-          <canvas class="viz" id="sn-heat"></canvas></div>
+          <canvas class="viz" id="sn-heat" role="img" aria-label="Amplitude heatmap. No frames yet."></canvas></div>
         <div class="card"><h3>Packets / sequence</h3>
           <div class="kv" id="sn-packets"></div></div>
       </div>
-      <div class="grid" style="margin-top:12px">
+      <div class="grid grid-gap">
         <div class="card"><h3>Phase stream — gated</h3>
-          <canvas class="viz" id="sn-phase"></canvas>
+          <canvas class="viz" id="sn-phase" role="img" aria-label="Phase stream placeholder. Phase is gated; amplitude only."></canvas>
           <p class="state-note">Amplitude-only pipeline: phase is not
           consumed until validated. Displayed as GATED, never synthesized.</p></div>
         <div class="card"><h3>Presence / activity — NOT VALIDATED</h3>
-          <canvas class="viz" id="sn-bars"></canvas>
+          <canvas class="viz" id="sn-bars" role="img" aria-label="Presence and confidence bars. No data yet."></canvas>
           <div class="kv" id="sn-showcase"></div>
           <p class="caveat">NOT VALIDATED — no human-presence claim, no
           activity classification. UI fields only; do not cite. RF Evidence
           Confidence below is UNCALIBRATED product state, never a
           probability.</p></div>
       </div>
-      <div class="grid" style="margin-top:12px">
-        <div class="card" style="grid-column: span 2">
+      <div class="grid grid-gap">
+        <div class="card span2">
           <h3>1-D trajectory — RF-inferred position trail</h3>
-          <canvas class="viz" id="sn-trail"></canvas>
+          <canvas class="viz" id="sn-trail" role="img" aria-label="Position trail chart. No trail available."></canvas>
           <p class="state-note">Recent RF-inferred link positions, oldest
           first. Empty = none available (no models, or nobody detected).
           NOT VALIDATED — do not cite.</p></div>
       </div>`;
     this.paint();
-    this._timer = setInterval(() => this.pollLive(), 2000);
-    this.pollLive();
+    this.ctx.poll.acquire("sensing", ["live"], (view) => this.onPoll(view));
   },
-  onHide() { if (this._timer) { clearInterval(this._timer); this._timer = null; } },
+  onHide() { this.ctx.poll.release("sensing"); },
   onShow() {
-    if (!this._timer) this._timer = setInterval(() => this.pollLive(), 2000);
+    this.ctx.poll.acquire("sensing", ["live"], (view) => this.onPoll(view));
+    this._paintAt = 0;
     this.paint();
   },
   onState() { this.renderValidity(); },
@@ -80,13 +79,17 @@ export const SensingTab = {
     if (Array.isArray(p.trail) && p.trail.length) {
       this._trail = p.trail.slice(-60);
     }
+    // Render decimation (revamp perf): buffers keep every frame (no data
+    // loss); canvas redraws at most every 250 ms, latest frame wins.
+    const now = (typeof performance !== "undefined" && performance.now) ? performance.now() : Date.now();
+    if (now - (this._paintAt || 0) < 250) return;
+    this._paintAt = now;
     this.paint();
   },
-  async pollLive() {
-    try {
-      const live = await api.live();
-      this._live = live && live.available ? live : null;
-    } catch { this._live = null; }
+  onPoll(view) {
+    const live = view.data.live;
+    this._live = live && live.available ? live : null;
+    this._view = view;
     this.renderValidity();
   },
   canvas(id) { return this.el.querySelector(`#${id}`); },
@@ -109,6 +112,10 @@ export const SensingTab = {
       );
     } else {
       rows.push(["session", `<span class="unknown">NO LIVE SESSION</span>`]);
+    }
+    if (this._view) {
+      const errs = fetchErrors(this._view, ["live"]);
+      if (errs) rows.push(["poll", errs]);
     }
     const node = this.el.querySelector("#sn-valid");
     if (node) {
@@ -134,11 +141,16 @@ export const SensingTab = {
   },
   paint() {
     drawHeatmap(this.canvas("sn-heat"), this.amps);
+    describe(this.canvas("sn-heat"),
+      this.amps.length ? `Amplitude heatmap, last ${this.amps.length} frames.` : "Amplitude heatmap. No frames yet.");
     drawSparkline(this.canvas("sn-rssi"), this.rssi, { label: "rssi" });
+    describe(this.canvas("sn-rssi"),
+      this.rssi.length ? `RSSI history, ${this.rssi.length} samples, latest ${this.rssi[this.rssi.length - 1]} dBm.` : "RSSI history chart. No data yet.");
     const p = this._last ? this._last.payload : null;
-    drawLine(this.canvas("sn-amp"),
-      p && Array.isArray(p.amplitudes) ? p.amplitudes : null,
-      { label: "amplitude", color: "#37c6d4" });
+    const amps = p && Array.isArray(p.amplitudes) ? p.amplitudes : null;
+    drawLine(this.canvas("sn-amp"), amps, { label: "amplitude" });
+    describe(this.canvas("sn-amp"),
+      amps ? `Latest amplitude frame, ${amps.length} subcarriers.` : "Latest amplitude frame chart. No data yet.");
     placeholder(this.canvas("sn-phase"), "PHASE GATED — AMPLITUDE ONLY");
     drawBars(this.canvas("sn-bars"), [
       { label: "presence_prob", value: p ? p.presence_prob : null },
@@ -146,8 +158,13 @@ export const SensingTab = {
       { label: "confidence", value: p ? p.confidence : null },
       { label: "rf_evidence", value: p ? (p.rf_evidence_confidence ?? null) : null },
     ]);
+    describe(this.canvas("sn-bars"), p
+      ? `Presence bars. RF evidence ${p.rf_evidence_confidence != null ? p.rf_evidence_confidence.toFixed(2) + ", UNCALIBRATED" : "none"}.`
+      : "Presence and confidence bars. No data yet.");
     drawSparkline(this.canvas("sn-trail"), this._trail || null,
       { label: "link position t" });
+    describe(this.canvas("sn-trail"),
+      this._trail ? `Position trail, ${this._trail.length} points.` : "Position trail chart. No trail available.");
     const sc = this.el.querySelector("#sn-showcase");
     if (sc) {
       const rows = p ? [

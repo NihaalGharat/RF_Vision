@@ -14,12 +14,43 @@ function setupCanvas(canvas, height = 120) {
   return { ctx, width, height };
 }
 
+// Theme-aware palette: canvas colors follow CSS variables so the light
+// theme stops rendering dark islands. Cached per theme value (cheap).
+let _pal = null, _palTheme = "";
+export function palette() {
+  const theme = (document.documentElement.dataset || {}).theme || "";
+  if (_pal && _palTheme === theme) return _pal;
+  const g = (n, f) => {
+    try {
+      return getComputedStyle(document.documentElement)
+        .getPropertyValue(n).trim() || f;
+    } catch { return f; }
+  };
+  _palTheme = theme;
+  _pal = {
+    bg: g("--bg-0", "#141a1e"),
+    ink1: g("--ink-1", "#b9c6c6"),
+    ink2: g("--ink-2", "#7d8b8b"),
+    accent: g("--accent", "#37c6d4"),
+    accentDim: g("--accent-dim", "#1e7d87"),
+    line: g("--line", "#2c353b"),
+    warn: g("--warn", "#e0a63c"),
+  };
+  return _pal;
+}
+
+// Text fallback for canvas-only information (screen-reader summary).
+export function describe(canvas, text) {
+  if (canvas && text) canvas.setAttribute("aria-label", text);
+}
+
 export function placeholder(canvas, text = "NO DATA") {
+  const pal = palette();
   const { ctx, width, height } = setupCanvas(canvas);
-  ctx.fillStyle = "#1a2126";
+  ctx.fillStyle = pal.bg;
   ctx.fillRect(0, 0, width, height);
-  ctx.fillStyle = "#7d8b8b";
-  ctx.font = "11px monospace";
+  ctx.fillStyle = pal.ink2;
+  ctx.font = "12px monospace";
   ctx.textAlign = "center";
   ctx.fillText(text, width / 2, height / 2);
 }
@@ -53,15 +84,16 @@ export function drawSparkline(canvas, series, opts = {}) {
     placeholder(canvas, opts.emptyText || "NO DATA");
     return;
   }
+  const pal = palette();
   const { ctx, width, height } = setupCanvas(canvas, opts.height || 60);
   let lo = Math.min(...series), hi = Math.max(...series);
   if (!(hi > lo)) { hi = lo + 1; }
-  ctx.strokeStyle = "#2c353b";
+  ctx.strokeStyle = pal.line;
   ctx.beginPath();
   ctx.moveTo(0, height - 1);
   ctx.lineTo(width, height - 1);
   ctx.stroke();
-  ctx.strokeStyle = opts.color || "#37c6d4";
+  ctx.strokeStyle = opts.color || pal.accent;
   ctx.lineWidth = 1.5;
   ctx.beginPath();
   series.forEach((v, i) => {
@@ -70,8 +102,8 @@ export function drawSparkline(canvas, series, opts = {}) {
     if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
   });
   ctx.stroke();
-  ctx.fillStyle = "#7d8b8b";
-  ctx.font = "10px monospace";
+  ctx.fillStyle = pal.ink2;
+  ctx.font = "11px monospace";
   ctx.textAlign = "left";
   const last = series[series.length - 1];
   ctx.fillText(`${opts.label || ""} ${Number(last).toFixed(1)} [${lo.toFixed(0)}..${hi.toFixed(0)}]`, 4, 11);
@@ -79,24 +111,30 @@ export function drawSparkline(canvas, series, opts = {}) {
 
 export function drawBars(canvas, entries, opts = {}) {
   // entries: [{label, value (0..1|null)}]; null → UNKNOWN slot.
+  // Empty → explicit NO DATA placeholder (never a blank strip).
+  if (!entries || !entries.length) {
+    placeholder(canvas, opts.emptyText || "NO DATA");
+    return;
+  }
+  const pal = palette();
   const { ctx, width } = setupCanvas(canvas, opts.height || 24 * Math.max(entries.length, 1) + 8);
-  ctx.font = "10px monospace";
+  ctx.font = "11px monospace";
   entries.forEach((e, i) => {
     const y = 8 + i * 24;
-    ctx.fillStyle = "#7d8b8b";
+    ctx.fillStyle = pal.ink2;
     ctx.textAlign = "left";
     ctx.fillText(e.label.slice(0, 18), 4, y + 10);
     const bx = 130, bw = Math.max(width - 190, 40);
-    ctx.strokeStyle = "#2c353b";
+    ctx.strokeStyle = pal.line;
     ctx.strokeRect(bx, y, bw, 12);
     if (e.value === null || e.value === undefined) {
-      ctx.fillStyle = "#5f7373";
+      ctx.fillStyle = pal.ink2;
       ctx.fillText("UNKNOWN", bx + 4, y + 10);
     } else {
       const t = Math.max(0, Math.min(1, e.value));
-      ctx.fillStyle = e.color || "#37c6d4";
+      ctx.fillStyle = e.color || pal.accent;
       ctx.fillRect(bx, y, bw * t, 12);
-      ctx.fillStyle = "#b9c6c6";
+      ctx.fillStyle = pal.ink1;
       ctx.textAlign = "right";
       ctx.fillText(Number(e.value).toFixed(2), width - 4, y + 10);
     }
@@ -110,17 +148,18 @@ export function drawLine(canvas, series, opts = {}) {
     placeholder(canvas, opts.emptyText || "NO DATA");
     return;
   }
+  const pal = palette();
   const { ctx, width, height } = setupCanvas(canvas, opts.height || 140);
   let lo = Math.min(...series), hi = Math.max(...series);
   if (!(hi > lo)) { hi = lo + 1; }
   const padL = 34, padB = 14, padT = 16;
   const iw = width - padL - 6, ih = height - padT - padB;
-  ctx.fillStyle = "#141a1e";
+  ctx.fillStyle = pal.bg;
   ctx.fillRect(0, 0, width, height);
-  ctx.font = "10px monospace";
+  ctx.font = "11px monospace";
   // gridlines at min / mid / max with y labels
-  ctx.strokeStyle = "#222c31";
-  ctx.fillStyle = "#5f7373";
+  ctx.strokeStyle = pal.line;
+  ctx.fillStyle = pal.ink2;
   ctx.textAlign = "right";
   [[hi, padT], [(hi + lo) / 2, padT + ih / 2], [lo, padT + ih]].forEach(
     ([v, y]) => {
@@ -134,7 +173,7 @@ export function drawLine(canvas, series, opts = {}) {
   ctx.textAlign = "right";
   ctx.fillText(`tone ${series.length - 1}`, width - 6, height - 3);
   // trace
-  ctx.strokeStyle = opts.color || "#37c6d4";
+  ctx.strokeStyle = opts.color || pal.accent;
   ctx.lineWidth = 1.5;
   ctx.beginPath();
   series.forEach((v, i) => {
@@ -144,7 +183,7 @@ export function drawLine(canvas, series, opts = {}) {
   });
   ctx.stroke();
   // legend
-  ctx.fillStyle = "#7d8b8b";
+  ctx.fillStyle = pal.ink2;
   ctx.textAlign = "left";
   const last = series[series.length - 1];
   ctx.fillText(`${opts.label || "value"} n=${series.length} ` +
@@ -156,15 +195,16 @@ export function drawRoom2d(canvas, model) {
   // model: {widthM|null, lengthM|null, router:{x,z}|null, esp32:{x,z}|null,
   //         positionT|null (0..1 along link), uncertainty|null}.
   // Unknown geometry is drawn as a dashed UNKNOWN outline — never invented.
+  const pal = palette();
   const { ctx, width, height } = setupCanvas(canvas, 260);
-  ctx.fillStyle = "#141a1e";
+  ctx.fillStyle = pal.bg;
   ctx.fillRect(0, 0, width, height);
   const pad = 24;
   const W = model.widthM, L = model.lengthM;
   const known = W && L && W > 0 && L > 0;
   const rx = pad, ry = pad, rw = width - 2 * pad, rh = height - 2 * pad;
   // grid
-  ctx.strokeStyle = "#222c31";
+  ctx.strokeStyle = pal.line;
   ctx.lineWidth = 1;
   for (let gx = rx; gx <= rx + rw; gx += 20) {
     ctx.beginPath(); ctx.moveTo(gx, ry); ctx.lineTo(gx, ry + rh); ctx.stroke();
@@ -174,17 +214,17 @@ export function drawRoom2d(canvas, model) {
   }
   // room outline
   ctx.setLineDash(known ? [] : [6, 4]);
-  ctx.strokeStyle = known ? "#37c6d4" : "#7d8b8b";
+  ctx.strokeStyle = known ? pal.accent : pal.ink2;
   ctx.strokeRect(rx, ry, rw, rh);
   ctx.setLineDash([]);
-  ctx.fillStyle = "#7d8b8b";
-  ctx.font = "10px monospace";
+  ctx.fillStyle = pal.ink2;
+  ctx.font = "11px monospace";
   ctx.textAlign = "left";
   ctx.fillText(known ? `${W.toFixed(1)} × ${L.toFixed(1)} m` : "ROOM: UNKNOWN (uncalibrated)", rx + 4, ry + 12);
   // nodes default to opposite ends when positions unknown
   const toXY = (t) => ({ x: rx + t * rw, y: ry + rh / 2 });
   const rXY = toXY(0), eXY = toXY(1);
-  ctx.strokeStyle = "#1e7d87";
+  ctx.strokeStyle = pal.accentDim;
   ctx.lineWidth = 2;
   ctx.beginPath(); ctx.moveTo(rXY.x, rXY.y); ctx.lineTo(eXY.x, eXY.y); ctx.stroke();
   // uncertainty region around position estimate
@@ -193,17 +233,17 @@ export function drawRoom2d(canvas, model) {
     const half = (model.uncertainty || 0) * rw;
     ctx.fillStyle = "rgba(224, 166, 60, 0.25)";
     ctx.fillRect(px - half, ry + rh / 2 - 14, half * 2, 28);
-    ctx.fillStyle = "#e0a63c";
+    ctx.fillStyle = pal.warn;
     ctx.beginPath(); ctx.arc(px, ry + rh / 2, 4, 0, Math.PI * 2); ctx.fill();
   }
   const node = (p, color, tag) => {
     ctx.fillStyle = color;
     ctx.fillRect(p.x - 5, p.y - 5, 10, 10);
-    ctx.fillStyle = "#b9c6c6";
+    ctx.fillStyle = pal.ink1;
     ctx.fillText(tag, p.x + 8, p.y + 4);
   };
   node(rXY, "#4d8de0", "ROUTER");
   node(eXY, "#3fce7a", "ESP32");
-  ctx.fillStyle = "#5f7373";
+  ctx.fillStyle = pal.ink2;
   ctx.fillText("1-D link view — 2-D/3-D not claimed", rx + 4, ry + rh - 6);
 }

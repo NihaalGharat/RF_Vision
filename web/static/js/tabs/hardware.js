@@ -2,8 +2,7 @@
    RF Vision native. Baseline values come from the backend (constants gated
    by docs/hardware/BASELINE.md); link health comes from /api/v1/live.
    Anything unverified renders UNKNOWN. */
-import { api } from "../api.js";
-import { pillFor } from "../banner.js";
+import { pillFor, fetchErrors } from "../banner.js";
 
 export const HardwareTab = {
   init(el, ctx) {
@@ -22,26 +21,24 @@ export const HardwareTab = {
           ever initiated from this console.</p></div>
       </div>`;
     this.refresh();
-    this._timer = setInterval(() => this.refresh(), 2000);
+    this.ctx.poll.acquire("hardware", ["experiment", "live"],
+      (view) => this.onPoll(view));
   },
-  onHide() { if (this._timer) { clearInterval(this._timer); this._timer = null; } },
+  onHide() { this.ctx.poll.release("hardware"); },
   onShow() {
-    if (!this._timer) this._timer = setInterval(() => this.refresh(), 2000);
+    this.ctx.poll.acquire("hardware", ["experiment", "live"],
+      (view) => this.onPoll(view));
     this.refresh();
+  },
+  onPoll(view) {
+    this._exp = view.data.experiment || null;
+    const live = view.data.live;
+    this._live = live && live.available ? live : null;
+    this._view = view;
+    this.renderAll();
   },
   onState() { this.renderLink(); },
   async refresh() {
-    try {
-      this._exp = await api.experiment();
-    } catch {
-      this._exp = null;
-    }
-    try {
-      const live = await api.live();
-      this._live = live && live.available ? live : null;
-    } catch {
-      this._live = null;
-    }
     this.renderAll();
   },
   renderAll() {
@@ -86,6 +83,10 @@ export const HardwareTab = {
       ["transport error", L.transport.error || "none"],
       ["firmware identity", (this._exp ? this._exp.firmware.identity : "UNKNOWN")],
     ] : [["diagnostics", `<span class="unknown">NO LIVE SESSION</span>`]];
+    if (this._view) {
+      const errs = fetchErrors(this._view, ["experiment", "live"]);
+      if (errs) diag.push(["poll", errs]);
+    }
     this.el.querySelector("#hw-diag").innerHTML =
       diag.map(([k, v]) => `<dt>${k}</dt><dd>${v}</dd>`).join("");
   },

@@ -8,14 +8,8 @@ import { api } from "./api.js";
 export class HealthMonitor {
   constructor(store) {
     this.store = store;
-    this.subs = [];
     this.last = null;
     this._timer = null;
-  }
-
-  subscribe(cb) {
-    this.subs.push(cb);
-    if (this.last) cb(this.last);
   }
 
   start() {
@@ -44,9 +38,6 @@ export class HealthMonitor {
       this.last = { ok: false, error: String(err) };
       document.getElementById("provenance-line").textContent =
         "provenance: console unreachable";
-    }
-    for (const cb of this.subs) {
-      try { cb(this.last); } catch (e) { console.error(e); }
     }
   }
 }

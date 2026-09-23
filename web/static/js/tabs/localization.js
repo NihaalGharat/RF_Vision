@@ -3,7 +3,7 @@
    position + uncertainty, sync state. 2-D/3-D reserved, never claimed. */
 import { api } from "../api.js";
 import { pillFor, fmtUnknown } from "../banner.js";
-import { drawBars } from "../viz2d.js";
+import { drawBars, describe } from "../viz2d.js";
 
 export const LocalizationTab = {
   init(el, ctx) {
@@ -13,7 +13,7 @@ export const LocalizationTab = {
       <div class="grid">
         <div class="card"><h3>Estimate (link-1d)</h3><div class="kv" id="lc-est"></div>
           <p class="caveat">1-D link-relative only. No 2-D/3-D claim exists.</p></div>
-        <div class="card"><h3>Uncertainty</h3><canvas class="viz" id="lc-bars"></canvas></div>
+        <div class="card"><h3>Uncertainty</h3><canvas class="viz" id="lc-bars" role="img" aria-label="Position and uncertainty bars. No validated estimator."></canvas></div>
         <div class="card"><h3>Node registry</h3><div class="kv" id="lc-nodes"></div></div>
         <div class="card"><h3>Calibration / sync</h3><div class="kv" id="lc-cal"></div></div>
       </div>`;
@@ -68,8 +68,11 @@ export const LocalizationTab = {
       ["uncertainty", `<span class="unknown">UNKNOWN (no validated estimator)</span>`],
     ]);
     drawBars(this.el.querySelector("#lc-bars"), [
-      { label: "position t", value: this._pos ?? null, color: "#e0a63c" },
+      { label: "position t", value: this._pos ?? null },
       { label: "uncertainty", value: null },
     ]);
+    describe(this.el.querySelector("#lc-bars"), this._pos != null
+      ? `Position t=${this._pos.toFixed(3)}, NOT VALIDATED, uncertainty unknown.`
+      : "Position and uncertainty bars. No validated estimator.");
   },
 };

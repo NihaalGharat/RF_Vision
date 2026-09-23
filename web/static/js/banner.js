@@ -42,3 +42,21 @@ export function fmtUnknown(value, fmt) {
   }
   return fmt ? fmt(value) : String(value);
 }
+
+// Failed-poll row: never leave stale-looking values without context.
+// Shows which endpoint failed, the error, last-good age, and a Retry
+// button (handled by the global [data-retry] delegation in app.js).
+export function fetchErrors(view, endpoints) {
+  const names = (endpoints || Object.keys(view.errors || {}))
+    .filter((n) => view.errors && view.errors[n]);
+  if (!names.length) return "";
+  const rows = names.map((n) => {
+    const age = view.okAt && view.okAt[n]
+      ? ` · last good ${Math.max(0, Math.round((view.at - view.okAt[n]) / 1000))} s ago`
+      : " · no good read this session";
+    return `<div class="err-row"><span class="warn-text">fetch failed: ` +
+      `${n} (${view.errors[n]}${age})</span>` +
+      `<button class="linklike" data-retry type="button">Retry</button></div>`;
+  });
+  return rows.join("");
+}

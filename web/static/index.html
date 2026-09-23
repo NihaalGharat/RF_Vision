@@ -14,6 +14,7 @@
 </script>
 </head>
 <body>
+<a class="skip-link" href="#panels">Skip to console content</a>
 <div id="source-banner" class="source-banner" role="status" aria-live="polite" hidden></div>
 <header class="topbar">
   <div class="brand">
@@ -29,27 +30,28 @@
     <span id="clock" class="clock">--:--:--</span>
   </div>
 </header>
+<div id="statusband" class="statusband" aria-label="System status summary">
+  <span class="sb-item"><span class="sb-label">state</span><span class="sb-value" id="sb-state">…</span></span>
+  <span class="sb-item"><span class="sb-label">observation</span><span class="sb-value" id="sb-obs">…</span></span>
+  <span class="sb-item"><span class="sb-label">rf evidence</span><span class="sb-value" id="sb-conf">…</span></span>
+  <span class="sb-item"><span class="sb-label">nodes</span><span class="sb-value" id="sb-nodes">…</span></span>
+  <span class="sb-item"><span class="sb-label">frame</span><span class="sb-value" id="sb-fresh">…</span></span>
+</div>
 <nav class="tabs" role="tablist" aria-label="Console sections">
-  <button class="tab active" role="tab" data-tab="overview" aria-selected="true">Overview</button>
-  <button class="tab" role="tab" data-tab="sensing" aria-selected="false">Sensing</button>
-  <button class="tab" role="tab" data-tab="rffield" aria-selected="false">RF Field</button>
-  <button class="tab" role="tab" data-tab="localization" aria-selected="false">Localization</button>
-  <button class="tab" role="tab" data-tab="xai" aria-selected="false">XAI</button>
-  <button class="tab" role="tab" data-tab="experiments" aria-selected="false">Experiments</button>
-  <button class="tab" role="tab" data-tab="hardware" aria-selected="false">Hardware</button>
-  <button class="tab" role="tab" data-tab="models" aria-selected="false" disabled title="Reserved until validated">Models 🔒</button>
-  <button class="tab" role="tab" data-tab="settings" aria-selected="false">Settings</button>
+  <button class="tab active" role="tab" id="tab-overview" data-tab="overview" aria-selected="true" aria-controls="panel-overview">Overview</button>
+  <button class="tab" role="tab" id="tab-sensing" data-tab="sensing" aria-selected="false" aria-controls="panel-sensing">Sensing</button>
+  <button class="tab" role="tab" id="tab-rffield" data-tab="rffield" aria-selected="false" aria-controls="panel-rffield">RF Field</button>
+  <button class="tab" role="tab" id="tab-insights" data-tab="insights" aria-selected="false" aria-controls="panel-insights">Insights</button>
+  <button class="tab" role="tab" id="tab-session" data-tab="session" aria-selected="false" aria-controls="panel-session">Session</button>
+  <button class="tab" role="tab" id="tab-system" data-tab="system" aria-selected="false" aria-controls="panel-system">System</button>
 </nav>
 <main id="panels">
-  <section id="panel-overview" class="panel active" role="tabpanel" aria-label="Overview"></section>
-  <section id="panel-sensing" class="panel" role="tabpanel" aria-label="Sensing" hidden></section>
-  <section id="panel-rffield" class="panel" role="tabpanel" aria-label="RF Field" hidden></section>
-  <section id="panel-localization" class="panel" role="tabpanel" aria-label="Localization" hidden></section>
-  <section id="panel-xai" class="panel" role="tabpanel" aria-label="XAI" hidden></section>
-  <section id="panel-experiments" class="panel" role="tabpanel" aria-label="Experiments" hidden></section>
-  <section id="panel-hardware" class="panel" role="tabpanel" aria-label="Hardware" hidden></section>
-  <section id="panel-models" class="panel" role="tabpanel" aria-label="Models" hidden></section>
-  <section id="panel-settings" class="panel" role="tabpanel" aria-label="Settings" hidden></section>
+  <section id="panel-overview" class="panel active" role="tabpanel" aria-labelledby="tab-overview" tabindex="0"></section>
+  <section id="panel-sensing" class="panel" role="tabpanel" aria-labelledby="tab-sensing" tabindex="0" hidden></section>
+  <section id="panel-rffield" class="panel" role="tabpanel" aria-labelledby="tab-rffield" tabindex="0" hidden></section>
+  <section id="panel-insights" class="panel" role="tabpanel" aria-labelledby="tab-insights" tabindex="0" hidden></section>
+  <section id="panel-session" class="panel" role="tabpanel" aria-labelledby="tab-session" tabindex="0" hidden></section>
+  <section id="panel-system" class="panel" role="tabpanel" aria-labelledby="tab-system" tabindex="0" hidden></section>
 </main>
 <footer class="foot">
   <span id="provenance-line">provenance: loading…</span>

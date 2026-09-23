@@ -13,6 +13,16 @@ export class TabManager {
     this.onChange = [];
   }
 
+  // Revamp consolidation map: old hashes redirect to their new home
+  // (re-homing, not deletion — no dead deep links).
+  static redirect(id) {
+    return {
+      localization: "insights", xai: "insights",
+      experiments: "session", hardware: "session",
+      models: "system", settings: "system",
+    }[id] || id;
+  }
+
   register(id, module) {
     this.modules[id] = { ...module, id, inited: false };
   }
@@ -23,15 +33,30 @@ export class TabManager {
     this.tabs.forEach((btn) => {
       btn.addEventListener("click", () => this.switchTo(btn.dataset.tab));
     });
+    // Keyboard navigation: arrows move between tabs, Home/End jump.
+    this.navEl.addEventListener("keydown", (ev) => {
+      const keys = ["ArrowLeft", "ArrowRight", "Home", "End"];
+      if (!keys.includes(ev.key)) return;
+      const enabled = this.tabs.filter((b) => !b.disabled);
+      let i = enabled.findIndex((b) => b.dataset.tab === this.active);
+      if (ev.key === "ArrowRight") i = (i + 1) % enabled.length;
+      else if (ev.key === "ArrowLeft") i = (i - 1 + enabled.length) % enabled.length;
+      else if (ev.key === "Home") i = 0;
+      else i = enabled.length - 1;
+      ev.preventDefault();
+      enabled[i].focus();
+      this.switchTo(enabled[i].dataset.tab);
+    });
     window.addEventListener("hashchange", () => {
-      const id = location.hash.replace("#", "");
+      const id = TabManager.redirect(location.hash.replace("#", ""));
       if (id && this.modules[id]) this.switchTo(id);
     });
-    const initial = location.hash.replace("#", "");
+    const initial = TabManager.redirect(location.hash.replace("#", ""));
     this.switchTo(this.modules[initial] ? initial : "overview", true);
   }
 
   switchTo(id, silent = false) {
+    id = TabManager.redirect(id);
     const mod = this.modules[id];
     if (!mod) return;
     const btn = this.navEl.querySelector(`[data-tab="${id}"]`);
@@ -83,21 +108,5 @@ export class TabManager {
         try { mod.onState(snap); } catch (e) { console.error(`tab ${id}`, e); }
       }
     }
-  }
-
-  setBadge(id, text) {
-    const btn = this.navEl.querySelector(`[data-tab="${id}"]`);
-    if (!btn) return;
-    let badge = btn.querySelector(".badge");
-    if (text === null || text === undefined || text === "") {
-      if (badge) badge.remove();
-      return;
-    }
-    if (!badge) {
-      badge = document.createElement("span");
-      badge.className = "badge";
-      btn.appendChild(badge);
-    }
-    badge.textContent = text;
   }
 }

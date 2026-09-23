@@ -13,11 +13,11 @@ export const XaiTab = {
     el.innerHTML = `
       <div class="grid">
         <div class="card"><h3>Explanation status</h3><div class="kv" id="xai-status"></div></div>
-        <div class="card"><h3>Feature importance</h3><canvas class="viz" id="xai-bars"></canvas>
+        <div class="card"><h3>Feature importance</h3><canvas class="viz" id="xai-bars" role="img" aria-label="Feature importance chart. XAI not available."></canvas>
           <p class="caveat" id="xai-caveat" hidden></p></div>
       </div>
-      <div class="grid" style="margin-top:12px">
-        <div class="card" style="grid-column: span 2"><h3>Latest RF evidence — factual, not explanatory</h3>
+      <div class="grid grid-gap">
+        <div class="card span2"><h3>Latest RF evidence — factual, not explanatory</h3>
           <div class="kv" id="xai-evidence"></div>
           <p class="state-note">Canned sentence for the current showcase
           state. Describes reported evidence only; never a cause, never a
@@ -78,7 +78,7 @@ export const XaiTab = {
     const top = (d.top_k || []).slice(0, 12);
     const max = Math.max(0.0001, ...Object.values(scores));
     drawBars(bars, top.map((k) => ({
-      label: k, value: (scores[k] ?? 0) / max, color: "#a678e8",
+      label: k, value: (scores[k] ?? 0) / max,
     })));
     caveat.hidden = false;
     caveat.textContent = `Caveat (mandatory): ${d.caveats} Scores are comparative, never causal.`;

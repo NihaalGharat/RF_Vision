@@ -18,16 +18,24 @@ export class RfLinkScene {
     };
   }
 
+  // Scene height follows the CSS breakpoints (420 default, 300 ≤1024px,
+  // 260 ≤640px) so the renderer never fights the stylesheet.
+  sceneHeight() {
+    const w = window.innerWidth || 1280;
+    return w <= 640 ? 260 : (w <= 1024 ? 300 : 420);
+  }
+
   init() {
     const w = this.container.clientWidth || 600;
-    const h = 420;
+    const h = this.sceneHeight();
     this.renderer = new THREE.WebGLRenderer({ antialias: true });
     this.renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
     this.renderer.setSize(w, h);
     this.container.appendChild(this.renderer.domElement);
 
     this.scene = new THREE.Scene();
-    this.scene.background = new THREE.Color(0x141a1e);
+    this._bgTheme = "";
+    this._syncThemeBg();
     this.camera = new THREE.PerspectiveCamera(50, w / h, 0.1, 200);
     this.camera.position.set(4.5, 3.5, 6.5);
     this.controls = new OrbitControls(this.camera, this.renderer.domElement);
@@ -107,6 +115,20 @@ export class RfLinkScene {
     this._loop();
   }
 
+  // Canvas background follows the UI theme (no dark island in light
+  // mode). Cached per theme value — not re-read per frame.
+  _syncThemeBg() {
+    const theme = (document.documentElement.dataset || {}).theme || "";
+    if (theme === this._bgTheme) return;
+    this._bgTheme = theme;
+    let css = "";
+    try {
+      css = getComputedStyle(document.documentElement)
+        .getPropertyValue("--bg-0").trim();
+    } catch { /* fallback below */ }
+    this.scene.background = new THREE.Color(css || "#141a1e");
+  }
+
   _makeNode(color) {
     const group = new THREE.Group();
     const box = new THREE.Mesh(
@@ -149,6 +171,7 @@ export class RfLinkScene {
   setModel(model) {
     Object.assign(this.model, model);
     if (!this.ready) return;
+    this._syncThemeBg();
     if (model.widthM !== undefined) this._buildRoom(model.widthM);
     const amps = this.model.amplitudes;
     if (amps && amps.length) {
@@ -192,13 +215,22 @@ export class RfLinkScene {
   resize() {
     if (!this.ready) return;
     const w = this.container.clientWidth || 600;
-    this.camera.aspect = w / 420;
+    const h = this.sceneHeight();
+    this.camera.aspect = w / h;
     this.camera.updateProjectionMatrix();
-    this.renderer.setSize(w, 420);
+    this.renderer.setSize(w, h);
+  }
+
+  // Pause rendering while the tab is hidden (revamp perf): stops the RAF
+  // chain entirely; resume restarts it. No data affected — render only.
+  pause(v) {
+    const was = this._paused;
+    this._paused = Boolean(v);
+    if (was && !this._paused && this.ready) this._loop();
   }
 
   _loop() {
-    if (!this.ready) return;
+    if (!this.ready || this._paused) return;
     requestAnimationFrame(() => this._loop());
     if (!this._animate) {
       this.renderer.render(this.scene, this.camera);

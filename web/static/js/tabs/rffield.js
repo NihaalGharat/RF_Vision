@@ -2,7 +2,7 @@
    RF Vision native. Scene foundation (js/scene3d.js) + 2D room (js/viz2d.js).
    EXACTLY ONE LINK. Unknown geometry stays UNKNOWN. */
 import { RfLinkScene } from "../scene3d.js";
-import { drawRoom2d } from "../viz2d.js";
+import { drawRoom2d, describe } from "../viz2d.js";
 import { api } from "../api.js";
 
 export const RfFieldTab = {
@@ -11,14 +11,14 @@ export const RfFieldTab = {
     this.ctx = ctx;
     el.innerHTML = `
       <div class="grid">
-        <div class="card" style="grid-column: span 2">
+        <div class="card span2">
           <h3>3D RF environment — one link (three.js r160, local)</h3>
-          <div class="scene-wrap" id="rf-scene"></div>
+          <div class="scene-wrap" id="rf-scene" role="img" aria-label="3D RF link scene. Room uncalibrated."></div>
           <p class="state-note">Drag to orbit · scroll to zoom. Field strip is an
           amplitude abstraction, not a propagation model. No bodies, no mesh.</p>
         </div>
         <div class="card"><h3>2D room view</h3>
-          <canvas class="viz" id="rf-room"></canvas>
+          <canvas class="viz" id="rf-room" role="img" aria-label="2D room view. Room unknown, uncalibrated."></canvas>
           <p class="state-note">Dashed outline = uncalibrated. Positions default to
           link ends until measured.</p></div>
       </div>`;
@@ -34,8 +34,7 @@ export const RfFieldTab = {
       console.error("scene init", e);
     }
     this.refreshCal();
-    this._timer = setInterval(() => this.pollLive(), 2000);
-    this.pollLive();
+    this.ctx.poll.acquire("rffield", ["live"], (view) => this.onPoll(view));
   },
   async refreshCal() {
     try {
@@ -48,19 +47,17 @@ export const RfFieldTab = {
   },
   onShow() {
     this.scene?.resize();
-    if (!this._timer) {
-      this._timer = setInterval(() => this.pollLive(), 2000);
-      this.pollLive();
-    }
+    this.scene?.pause(false);
+    this.ctx.poll.acquire("rffield", ["live"], (view) => this.onPoll(view));
     this.paint();
   },
   onHide() {
-    if (this._timer) { clearInterval(this._timer); this._timer = null; }
+    this.ctx.poll.release("rffield");
+    this.scene?.pause(true);
   },
-  async pollLive() {
-    try {
-      const live = await api.live();
-      if (live && live.available) {
+  onPoll(view) {
+    const live = view.data.live;
+    if (live && live.available) {
         const st = live.stream, sg = live.signal;
         this._hudExtra = `${live.source_state} · ` +
           `${st.rate_hz != null ? st.rate_hz.toFixed(1) + " Hz" : "rate ?"} · ` +
@@ -69,9 +66,6 @@ export const RfFieldTab = {
       } else {
         this._hudExtra = "";
       }
-    } catch {
-      this._hudExtra = "";
-    }
     this.paint();
   },
   onEvent(ev) {
@@ -94,7 +88,20 @@ export const RfFieldTab = {
       uncertainty: null,
     };
     const canvas = this.el.querySelector("#rf-room");
-    if (canvas) drawRoom2d(canvas, room);
+    if (canvas) {
+      drawRoom2d(canvas, room);
+      describe(canvas, this._widthM
+        ? `2D room view, width ${this._widthM} m.` +
+          (this._pos != null ? ` Position t=${this._pos.toFixed(2)}.` : " No position estimate.")
+        : "2D room view. Room unknown, uncalibrated." +
+          (this._pos != null ? ` Position t=${this._pos.toFixed(2)} (NOT VALIDATED).` : ""));
+    }
+    const sceneEl = this.el.querySelector("#rf-scene");
+    if (sceneEl) {
+      describe(sceneEl, `3D RF link scene. ` +
+        (this._widthM ? `Room width ${this._widthM} m.` : "Room uncalibrated.") +
+        (this._showState ? ` ${this._showState}.` : " No observation."));
+    }
     if (!this._failed) {
       const hud = [this._hudExtra, this._showState]
         .filter(Boolean).join(" · ");

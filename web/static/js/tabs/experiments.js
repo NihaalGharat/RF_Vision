@@ -5,20 +5,20 @@
    CSI-SENSE human experiment; diagnostic recording is bounded (≤30 s)
    and explicit only. */
 import { api } from "../api.js";
-import { pillFor } from "../banner.js";
+import { pillFor, fetchErrors } from "../banner.js";
 
 export const ExperimentsTab = {
   init(el, ctx) {
     this.el = el;
     this.ctx = ctx;
     el.innerHTML = `
-      <div class="grid">
-        <div class="card" style="grid-column: span 2">
+      <div class="grid grid-gap">
+        <div class="card span2">
           <h3>Active session provenance</h3><div class="kv" id="ex-prov"></div></div>
         <div class="card"><h3>Live session — telemetry</h3>
           <div class="kv" id="ex-live"></div></div>
       </div>
-      <div class="grid" style="margin-top:12px">
+      <div class="grid grid-gap">
         <div class="card"><h3>Data source (explicit choice)</h3>
           <div class="row">
             <select class="btn" id="ex-source">
@@ -45,11 +45,13 @@ export const ExperimentsTab = {
     el.querySelector("#ex-rec-start").addEventListener("click", () => this.record(true));
     el.querySelector("#ex-rec-stop").addEventListener("click", () => this.record(false));
     this.refresh();
-    this._timer = setInterval(() => this.refresh(), 2000);
+    this.ctx.poll.acquire("experiments", ["experiment", "streamStatus", "live"],
+      (view) => this.onPoll(view));
   },
-  onHide() { if (this._timer) { clearInterval(this._timer); this._timer = null; } },
+  onHide() { this.ctx.poll.release("experiments"); },
   onShow() {
-    if (!this._timer) this._timer = setInterval(() => this.refresh(), 2000);
+    this.ctx.poll.acquire("experiments", ["experiment", "streamStatus", "live"],
+      (view) => this.onPoll(view));
     this.refresh();
   },
   async apply(start) {
@@ -87,15 +89,19 @@ export const ExperimentsTab = {
     }
     this.refresh();
   },
+  onPoll(view) {
+    this._exp = view.data.experiment || null;
+    this._stream = view.data.streamStatus || null;
+    const live = view.data.live;
+    this._live = live && live.available ? live : null;
+    this._view = view;
+    this.renderAll();
+  },
   async refresh() {
-    let exp = null, stream = null, live = null;
-    try {
-      [exp, stream] = await Promise.all([api.experiment(), api.streamStatus()]);
-    } catch { /* unreachable backend */ }
-    try {
-      const res = await api.live();
-      live = res && res.available ? res : null;
-    } catch { /* no live session */ }
+    this.renderAll();
+  },
+  renderAll() {
+    const exp = this._exp, stream = this._stream, live = this._live;
     const node = this.el.querySelector("#ex-live");
     const prov = this.el.querySelector("#ex-prov");
     const select = this.el.querySelector("#ex-source");
@@ -108,7 +114,8 @@ export const ExperimentsTab = {
       return;
     }
     const g = exp.geometry || {};
-    prov.innerHTML = [
+    const errs = this._view ? fetchErrors(this._view) : "";
+    prov.innerHTML = errs + [
       ["session", exp.session_id],
       ["source", pillFor(this.ctx.store.snapshot().state)],
       ["stream", stream ? `${stream.mode} · running=${stream.running}` : "UNKNOWN"],

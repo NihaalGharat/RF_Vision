@@ -6,18 +6,17 @@
 import { SourceStore } from "./store.js";
 import { TabManager } from "./tabs.js";
 import { bindSourceChrome } from "./banner.js";
+import { bindStatusBand } from "./statusband.js";
 import { HealthMonitor } from "./health.js";
 import { WsClient } from "./ws.js";
+import { PollScheduler } from "./scheduler.js";
 import { api } from "./api.js";
 import { OverviewTab } from "./tabs/overview.js";
 import { SensingTab } from "./tabs/sensing.js";
 import { RfFieldTab } from "./tabs/rffield.js";
-import { LocalizationTab } from "./tabs/localization.js";
-import { XaiTab } from "./tabs/xai.js";
-import { ExperimentsTab } from "./tabs/experiments.js";
-import { HardwareTab } from "./tabs/hardware.js";
-import { ModelsTab } from "./tabs/models.js";
-import { SettingsTab } from "./tabs/settings.js";
+import { InsightsTab } from "./tabs/insights.js";
+import { SessionTab } from "./tabs/session.js";
+import { SystemTab } from "./tabs/system.js";
 
 function tickClock() {
   const node = document.getElementById("clock");
@@ -39,15 +38,19 @@ async function boot() {
   tabs.register("overview", OverviewTab);
   tabs.register("sensing", SensingTab);
   tabs.register("rffield", RfFieldTab);
-  tabs.register("localization", LocalizationTab);
-  tabs.register("xai", XaiTab);
-  tabs.register("experiments", ExperimentsTab);
-  tabs.register("hardware", HardwareTab);
-  tabs.register("models", ModelsTab);
-  tabs.register("settings", SettingsTab);
+  tabs.register("insights", InsightsTab);
+  tabs.register("session", SessionTab);
+  tabs.register("system", SystemTab);
 
-  const ctx = { store, ws, api, tabs, health };
+  const ctx = { store, ws, api, tabs, health, poll: new PollScheduler() };
+  // Global retry delegation for fetch-error rows rendered by any tab.
+  document.addEventListener("click", (ev) => {
+    if (ev.target && ev.target.matches && ev.target.matches("[data-retry]")) {
+      ctx.poll.refresh();
+    }
+  });
   bindSourceChrome(store);
+  bindStatusBand(store);
   health.start();
   tabs.init(ctx);
   store.subscribe((snap) => tabs.dispatchState(snap));
