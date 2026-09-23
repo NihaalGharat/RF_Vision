@@ -14,11 +14,12 @@ export class TabManager {
   }
 
   // Revamp consolidation map: old hashes redirect to their new home
-  // (re-homing, not deletion — no dead deep links).
+  // (re-homing, not deletion — no dead deep links). Insights + Session
+  // merged into Research; Models + Settings live under secondary System.
   static redirect(id) {
     return {
-      localization: "insights", xai: "insights",
-      experiments: "session", hardware: "session",
+      localization: "research", xai: "research", insights: "research",
+      experiments: "research", hardware: "research", session: "research",
       models: "system", settings: "system",
     }[id] || id;
   }
@@ -83,6 +84,13 @@ export class TabManager {
       mod.inited = true;
     }
     this.active = id;
+    // Keep the selected tab in view when the tablist overflows (narrow
+    // viewports): "nearest" never moves an already-visible tab, and
+    // block:"nearest" never scrolls the page. Click and hash paths do not
+    // scroll otherwise; keyboard focus scrolls natively, this is a no-op there.
+    if (btn && btn.scrollIntoView) {
+      try { btn.scrollIntoView({ block: "nearest", inline: "nearest" }); } catch { /* older engines */ }
+    }
     if (!silent) history.replaceState(null, "", `#${id}`);
     if (mod.onShow) {
       try { mod.onShow(); } catch (e) { console.error(e); }

@@ -19,9 +19,10 @@ export const OverviewTab = {
         <div class="hero-cell" id="ov-hero-conf"></div>
       </div>
       <div class="grid grid-gap">
-        <div class="card"><h3>RF evidence — latest</h3>
-          <div class="kv" id="ov-evidence"></div></div>
-        <div class="card"><h3>Node health</h3>
+        <div class="card"><h3>RF evidence · node health</h3>
+          <p class="sub-label">RF evidence — latest</p>
+          <div class="kv" id="ov-evidence"></div>
+          <p class="sub-label">Node health</p>
           <div id="ov-nodes"></div>
           <p class="caveat">Localization not validated: zones stay
           AWAITING VALIDATED LOCALIZATION DATA.</p></div>
@@ -34,10 +35,6 @@ export const OverviewTab = {
         <details class="detail"><summary>System — backend / stream</summary>
           <div class="detail-body"><div class="kv" id="ov-backend"></div>
           <div id="ov-errors"></div></div></details>
-        <details class="detail"><summary>Research — validation state</summary>
-          <div class="detail-body"><div class="kv" id="ov-research"></div>
-          <p class="caveat">Calibration, localization and XAI are not
-          validated. Telemetry above is transport + signal only.</p></div></details>
         <details class="detail"><summary>Latest frame</summary>
           <div class="detail-body"><div class="kv" id="ov-frame"></div></div></details>
       </div>`;
@@ -225,11 +222,5 @@ export const OverviewTab = {
       ["console", e ? `web ${e.software.rfvision_web}` : "UNKNOWN"],
     ]);
     this.setHtml("ov-errors", this._view ? fetchErrors(this._view) : "");
-    this.kv("ov-research", [
-      ["calibration", `<span class="unknown">UNCALIBRATED</span>`],
-      ["localization", `<span class="unknown">NOT VALIDATED</span>`],
-      ["xai", `<span class="unknown">NOT AVAILABLE</span>`],
-      ["models", `<span class="unknown">NO VALIDATED MODELS</span>`],
-    ]);
   },
 };

@@ -7,6 +7,24 @@
   --text-display: 28px; --text-h: 15px; --text-body: 13px;
   --text-data: 12px; --text-note: 12px;
   --ease-out: cubic-bezier(0.23, 1, 0.32, 1);
+  /* Glass instrument tokens (presentation only; no semantic change).
+     Translucency stays high so text pairs hold contrast; blur is modest
+     and confined to shell + primary surfaces (see usage below). */
+  --bg-ambient: #0b1114;
+  --glow-1: rgba(55, 198, 212, 0.11);
+  --glow-2: rgba(80, 130, 180, 0.08);
+  --glass-bg: color-mix(in srgb, var(--bg-1) 80%, transparent);
+  --glass-bg-soft: color-mix(in srgb, var(--bg-1) 88%, transparent);
+  --glass-brd: rgba(255, 255, 255, 0.14);
+  --glass-hi: inset 0 1px 0 rgba(255, 255, 255, 0.11);
+  --glass-shadow: 0 12px 32px rgba(0, 0, 0, 0.55), 0 2px 8px rgba(30, 125, 135, 0.12);
+  /* Faint top-light sheen: the primary glass cue on near-black grounds,
+     where translucent fills alone merge into the backdrop. Kept to hero
+     cells only — every hero pair (ink-0/ink-1/accent) holds ≥7.4:1 on
+     the sheened strip; generic cards host muted ink-2 text high up. */
+  --sheen-top: rgba(255, 255, 255, 0.05);
+  --glass-blur: blur(16px) saturate(1.25);
+  --glass-blur-soft: blur(10px) saturate(1.15);
 }
 :root[data-theme="light"] {
   /* Light-theme status colors (absent from tokens.css light scheme). */
@@ -14,17 +32,53 @@
   --ok: #1d7a44; --warn: #925f10; --sim: #6a3fb5; --err: #b03232;
   --stale: #5c6663;
   --shadow: 0 2px 10px rgba(18, 43, 48, 0.12);
+  /* Light glass: near-opaque white so pairs hold; same blur system. */
+  --bg-ambient: #e9f0f0;
+  --glow-1: rgba(20, 112, 122, 0.11);
+  --glow-2: rgba(90, 140, 170, 0.10);
+  --glass-bg: color-mix(in srgb, #ffffff 78%, transparent);
+  --glass-bg-soft: color-mix(in srgb, #ffffff 88%, transparent);
+  --glass-brd: rgba(18, 43, 48, 0.16);
+  --glass-hi: inset 0 1px 0 rgba(255, 255, 255, 0.65);
+  --glass-shadow: 0 10px 28px rgba(18, 43, 48, 0.14);
+  /* Light glass already keys off its strong top highlight + shadow; an
+     extra white sheen would be invisible, so the token is a deliberate
+     no-op here (keeps the .card/.hero-cell layering shared). */
+  --sheen-top: rgba(255, 255, 255, 0);
 }
 html, body { height: 100%; }
 body {
-  margin: 0; background: var(--bg-0); color: var(--ink-0);
+  margin: 0; color: var(--ink-0);
+  /* Layered instrument backdrop: static ambient glows over a tinted base.
+     Fixed attachment keeps the field stable while content scrolls; no
+     animation, no repaint cost beyond initial paint. */
+  background-color: var(--bg-ambient, var(--bg-0));
+  background-image:
+    radial-gradient(1100px 520px at 12% -6%, var(--glow-1), transparent 70%),
+    radial-gradient(900px 480px at 88% 4%, var(--glow-2), transparent 70%);
+  background-attachment: fixed;
   font-family: var(--font-sans); font-size: 14px; line-height: 1.45;
   display: flex; flex-direction: column; min-height: 100vh;
+}
+/* Static film grain: fixed, non-interactive, ~3% opacity. Breaks digital
+   flatness without assets or network; pointer-events-none so hit-testing
+   and focus are unaffected. */
+body::after {
+  content: ""; position: fixed; inset: 0; z-index: 2000; pointer-events: none;
+  opacity: 0.032;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2'/%3E%3C/filter%3E%3Crect width='160' height='160' filter='url(%23n)'/%3E%3C/svg%3E");
 }
 .topbar {
   display: flex; justify-content: space-between; align-items: center;
   padding: var(--space-2) var(--space-4);
-  background: var(--bg-1); border-bottom: 1px solid var(--line);
+  /* Shell glass: sticky so content slides beneath the blur; hairline
+     replaces the flat divider. */
+  position: sticky; top: 0; z-index: 40;
+  background: var(--glass-bg);
+  -webkit-backdrop-filter: var(--glass-blur);
+  backdrop-filter: var(--glass-blur);
+  border-bottom: 1px solid var(--glass-brd);
+  box-shadow: var(--glass-hi);
 }
 .brand { display: flex; gap: var(--space-3); align-items: center; }
 .brand-mark {
@@ -62,20 +116,51 @@ body {
 :root[data-theme="light"] .source-banner[data-state="SIMULATED"] { background: #dfe8f5; color: #2456a6; }
 :root[data-theme="light"] .source-banner[data-state="STALE"] { background: #e3e7e6; color: #4c5553; }
 :root[data-theme="light"] .source-banner[data-state="DISCONNECTED"] { background: #f7dede; color: #9c2b2b; }
+/* Light-theme contrast repairs (measured rendered pairs; dark untouched):
+   brand-mark glyphs, primary-button hover text, and the 3D HUD chip all
+   fall below 4.5:1 against their light-theme surfaces. */
+:root[data-theme="light"] .brand-mark { color: #fff; }
+:root[data-theme="light"] button.btn.primary:hover:not(:disabled) { color: #fff; }
+:root[data-theme="light"] .scene-hud { color: #e8f6f8; background: rgba(6, 25, 28, 0.78); }
 
 .tabs {
   display: flex; gap: var(--space-1); padding: var(--space-2) var(--space-4) 0;
-  background: var(--bg-1); border-bottom: 1px solid var(--line);
+  background: var(--glass-bg-soft);
+  -webkit-backdrop-filter: var(--glass-blur-soft);
+  backdrop-filter: var(--glass-blur-soft);
+  border-bottom: 1px solid var(--glass-brd);
   overflow-x: auto;
+  /* Floor the strip at one tab row: a horizontal scroll container can
+     otherwise collapse to padding height (seen whenever the page carries a
+     vertical scrollbar), clipping the 44px tabs inside itself and leaving
+     later panel content to paint over them — real taps then miss. 52px +
+     border equals the natural healthy height, so this is a no-op there. */
+  min-height: calc(44px + var(--space-2));
+  /* Persistent overflow affordance where the platform shows scrollbars
+     (unstyled `auto` leaves discoverability to chance on narrow widths). */
+  scrollbar-width: thin; scrollbar-color: var(--accent-dim) transparent;
 }
+.tabs::-webkit-scrollbar { height: 8px; }
+.tabs::-webkit-scrollbar-thumb { background: var(--accent-dim); border-radius: 4px; }
+.tabs::-webkit-scrollbar-track { background: transparent; }
 .tab {
   background: none; border: 1px solid transparent; border-bottom: none;
   color: var(--ink-1); font: inherit; font-size: 13px; font-weight: 600;
   padding: var(--space-2) var(--space-3); border-radius: var(--radius-s) var(--radius-s) 0 0;
   cursor: pointer; white-space: nowrap; min-height: 44px;
+  display: inline-flex; align-items: center; gap: 8px;
 }
-.tab:hover { color: var(--ink-0); background: var(--bg-2); }
-.tab.active { color: var(--accent); background: var(--bg-0); border-color: var(--line); }
+.tab svg { flex: none; }
+.tab:hover { color: var(--ink-0); background: color-mix(in srgb, var(--bg-2) 70%, transparent); }
+/* Active tab: illuminated glass — accent hairline on top, faint accent
+   wash; text stays the verified accent pair, targets and geometry
+   untouched (collapse floor below is authoritative, do not remove). */
+.tab.active {
+  color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 13%, transparent);
+  border-color: var(--glass-brd);
+  box-shadow: inset 0 2px 0 var(--accent-dim);
+}
 .tab:disabled { color: var(--ink-2); cursor: not-allowed; }
 
 #panels { flex: 1; padding: var(--space-4); max-width: 1500px; width: 100%; margin: 0 auto; }
@@ -85,8 +170,16 @@ body {
 .grid-gap { margin-top: var(--space-3); }
 .span2 { grid-column: span 2; }
 .card {
-  background: var(--bg-1); border: 1px solid var(--line);
-  border-radius: var(--radius-m); padding: var(--space-3); box-shadow: var(--shadow);
+  /* Primary glass: translucent surface + inner highlight + tinted
+     shadow. No top sheen here: muted (.ink-2) table/note text routinely
+     sits high in short cards and the sheen would push those pairs below
+     4.5:1. Data interiors (canvas/tables/kv) keep solid grounds. */
+  background: var(--glass-bg-soft);
+  border: 1px solid var(--glass-brd);
+  border-radius: var(--radius-m); padding: var(--space-3);
+  -webkit-backdrop-filter: var(--glass-blur-soft);
+  backdrop-filter: var(--glass-blur-soft);
+  box-shadow: var(--glass-hi), var(--glass-shadow);
 }
 .card h3 {
   margin: 0 0 var(--space-3); font-size: 12px; font-weight: 700;
@@ -118,12 +211,23 @@ body {
 .state-note { font-size: 12px; color: var(--ink-2); }
 .caveat { border-left: 3px solid var(--warn); padding-left: var(--space-2); color: var(--ink-1); font-size: 12px; }
 canvas.viz { width: 100%; height: auto; background: var(--bg-0); border: 1px solid var(--line); border-radius: var(--radius-s); }
-.scene-wrap { position: relative; }
+/* RF viewport frame: glass bezel around (never over) the render surface,
+   with a faint accent aura so the scene keeps primacy. Canvas interiors
+   and HUD semantics are untouched. */
+.scene-wrap {
+  position: relative;
+  border: 1px solid var(--glass-brd); border-radius: var(--radius-m);
+  padding: var(--space-2);
+  background: color-mix(in srgb, var(--bg-0) 55%, transparent);
+  box-shadow: var(--glass-hi), var(--glass-shadow),
+    0 0 28px color-mix(in srgb, var(--accent) 13%, transparent);
+}
 .scene-wrap canvas { display: block; width: 100%; height: 420px; }
 .scene-hud {
   position: absolute; top: var(--space-2); left: var(--space-2);
   font-family: var(--font-mono); font-size: 11px; color: var(--accent);
   background: rgba(0, 0, 0, 0.55); padding: 4px 8px; border-radius: var(--radius-s);
+  border: 1px solid var(--glass-brd);
   pointer-events: none;
 }
 button.btn, select.btn {
@@ -138,14 +242,10 @@ button.btn:hover:not(:disabled), select.btn:hover:not(:disabled) { border-color:
   button.btn:active:not(:disabled) { transform: scale(0.97); }
   button.btn, select.btn { transition: transform 160ms var(--ease-out), border-color var(--dur), background var(--dur); }
 }
-/* Restrained tab transition: opacity only, never layout (revamp motion). */
-.panel.active { animation: panelIn 180ms var(--ease-out); }
-@keyframes panelIn { from { opacity: 0; } to { opacity: 1; } }
-/* Limited entry stagger for the Overview hero (runs once per tab visit;
-   interaction never blocked; killed by reduced-motion below). */
-.hero-cell { animation: panelIn 200ms var(--ease-out); }
-.hero-cell:nth-child(2) { animation-delay: 40ms; }
-.hero-cell:nth-child(3) { animation-delay: 80ms; }
+/* Tab switches are instant by design: tab surfaces switch tens of times per
+   day and keyboard switches must never animate (interaction framework);
+   instant reads as faster and more instrument-like. Press/focus/hover
+   feedback above is retained. No entry animations anywhere. */
 button.btn:disabled, select.btn:disabled { opacity: 0.45; cursor: not-allowed; }
 button.btn:focus-visible, select.btn:focus-visible, .tab:focus-visible {
   outline: 2px solid var(--accent); outline-offset: 1px;
@@ -184,7 +284,10 @@ button.btn.primary:hover:not(:disabled) { background: var(--accent); color: #061
 .statusband {
   display: flex; gap: var(--space-3); align-items: center; flex-wrap: wrap;
   padding: var(--space-2) var(--space-4);
-  background: var(--bg-1); border-bottom: 1px solid var(--line);
+  /* Subtle shell glass: translucent + hairline, no blur (static readout
+     band; keeps text compositing simple and costs nothing on scroll). */
+  background: var(--glass-bg-soft);
+  border-bottom: 1px solid var(--glass-brd);
   font-family: var(--font-mono); font-size: var(--text-data);
 }
 .statusband .sb-item { display: flex; gap: var(--space-2); align-items: baseline; }
@@ -194,8 +297,16 @@ button.btn.primary:hover:not(:disabled) { background: var(--accent); color: #061
 /* Overview hero: SYSTEM → OBSERVATION → CONFIDENCE. */
 .hero-grid { display: grid; gap: var(--space-3); grid-template-columns: repeat(3, 1fr); }
 .hero-cell {
-  background: var(--bg-1); border: 1px solid var(--line);
+  background:
+    linear-gradient(180deg, var(--sheen-top), transparent 42%),
+    var(--glass-bg-soft);
+  border: 1px solid var(--glass-brd);
   border-radius: var(--radius-m); padding: var(--space-4);
+  -webkit-backdrop-filter: var(--glass-blur-soft);
+  backdrop-filter: var(--glass-blur-soft);
+  /* Primary-focus edge: faint accent hairline on top only. */
+  box-shadow: var(--glass-hi), var(--glass-shadow),
+    inset 0 2px 0 color-mix(in srgb, var(--accent-dim) 80%, transparent);
 }
 .hero-cell.hero-alert { border-color: var(--err); }
 .hero-cell.hero-warn { border-color: var(--warn); }
@@ -206,8 +317,10 @@ button.btn.primary:hover:not(:disabled) { background: var(--accent); color: #061
 
 /* Progressive disclosure: detail sections stay reachable, not prominent. */
 details.detail {
-  background: var(--bg-1); border: 1px solid var(--line);
+  background: var(--glass-bg-soft);
+  border: 1px solid var(--glass-brd);
   border-radius: var(--radius-m); padding: 0 var(--space-3);
+  box-shadow: var(--glass-hi);
 }
 details.detail > summary {
   cursor: pointer; padding: var(--space-3) 0; font-size: 12px; font-weight: 700;
@@ -229,7 +342,7 @@ table.tbl { width: 100%; border-collapse: collapse; font-size: var(--text-data);
   font-family: var(--font-mono); font-variant-numeric: tabular-nums; vertical-align: top;
 }
 .tbl th { color: var(--ink-2); font-weight: 600; white-space: nowrap; }
-.tbl tbody tr:hover td { background: var(--bg-2); }
+/* NOTE: no row-hover highlight — rows are informational, not clickable. */
 .tbl-wrap { overflow-x: auto; }
 
 /* Error rows with last-good context + retry (fix: swallowed fetches). */
@@ -239,6 +352,215 @@ button.linklike {
   color: var(--accent); font: inherit; text-decoration: underline;
 }
 button.linklike:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+
+/* Premium instrument craft (presentation only — no geometry, target,
+   breakpoint, or semantic change; all pseudo-element / counter driven).
+   Vocabulary, in priority order: typography → hierarchy → material →
+   geometry → micro-detail. Every rule below passed problem → evidence →
+   necessity → minimum → risk → verification; decorative-only additions
+   were rejected. */
+
+/* — Hero readout: technical index markers (primary instrument readout).
+   IDs are stable init-template anchors; re-renders re-create the label
+   node but the pseudo-element re-applies via CSS. Accent on both themes
+   holds ≥4.5:1, and the full text label remains the announced content
+   (pseudo content is never exposed to assistive tech). */
+#ov-hero-sys .hero-label::before { content: "01"; }
+#ov-hero-obs .hero-label::before { content: "02"; }
+#ov-hero-conf .hero-label::before { content: "03"; }
+#ov-hero-sys .hero-label::before,
+#ov-hero-obs .hero-label::before,
+#ov-hero-conf .hero-label::before {
+  font-family: var(--font-mono); font-weight: 400;
+  color: var(--accent); letter-spacing: 0.08em; margin-right: 10px;
+}
+/* — Hero corner brackets: precision L-ticks inside the padding zone.
+   Two opposite corners only (both pseudos); quiet accent-dim so the
+   readout — not the frame — stays dominant. */
+.hero-cell { position: relative; }
+.hero-cell::before, .hero-cell::after {
+  content: ""; position: absolute; width: 10px; height: 10px;
+  pointer-events: none;
+  border: 0 solid color-mix(in srgb, var(--accent-dim) 75%, transparent);
+}
+.hero-cell::before {
+  top: 6px; left: 6px; border-top-width: 1px; border-left-width: 1px;
+}
+.hero-cell::after {
+  bottom: 6px; right: 6px;
+  border-bottom-width: 1px; border-right-width: 1px;
+}
+
+/* — Card section indices: per-panel counters, right-aligned mono ink-2
+   (4.92/4.93 on card grounds — non-decorative, so the pair must hold).
+   Gives every card a calibrated section identity without touching JS. */
+.panel { counter-reset: sec; }
+.card h3 { counter-increment: sec; }
+.card h3::after {
+  content: counter(sec, decimal-leading-zero);
+  float: right; font-family: var(--font-mono); font-weight: 400;
+  font-size: 11px; letter-spacing: 0.1em; color: var(--ink-2);
+}
+
+/* — Disclosure markers: bespoke +/– in a fixed 18px mono box replacing
+   the native triangle. Instant content swap (no transition), so
+   reduced-motion and layout stability are unaffected. */
+details.detail > summary { list-style: none; }
+details.detail > summary::-webkit-details-marker { display: none; }
+details.detail > summary::before {
+  content: "+"; display: inline-block; width: 18px;
+  font-family: var(--font-mono); font-weight: 400; color: var(--accent);
+}
+details.detail[open] > summary::before { content: "\2013"; }
+
+/* — Status rail: identity marker + hairline item separators. The visual
+   "STATUS" tag is pseudo content (never announced; aria-label owns the
+   accessible name). Values gain one weight step for label/value split. */
+.statusband::before {
+  content: "STATUS"; font-family: var(--font-mono); font-size: 11px;
+  letter-spacing: 0.18em; color: var(--ink-2); white-space: nowrap;
+}
+.sb-item + .sb-item {
+  border-left: 1px solid var(--glass-brd); padding-left: var(--space-3);
+}
+.statusband .sb-value { font-weight: 600; }
+
+/* — Navigation: optical tracking only. The active wash/hairline keeps
+   its verified pairs; tracking refines the strip without touching
+   targets, heights, or scroll behavior. */
+.tab { letter-spacing: 0.05em; }
+
+/* — Viewport frame: measurement corners straddling the bezel + glass
+   HUD chip. Corners are decorative ticks (layered above the canvas,
+   below nothing interactive); scene, HUD text, and camera are untouched. */
+.scene-wrap::before, .scene-wrap::after {
+  content: ""; position: absolute; width: 14px; height: 14px; z-index: 2;
+  pointer-events: none;
+  border: 0 solid color-mix(in srgb, var(--accent-dim) 85%, transparent);
+}
+.scene-wrap::before {
+  top: -1px; left: -1px;
+  border-top-width: 1px; border-left-width: 1px;
+  border-top-left-radius: var(--radius-m);
+}
+.scene-wrap::after {
+  bottom: -1px; right: -1px;
+  border-bottom-width: 1px; border-right-width: 1px;
+  border-bottom-right-radius: var(--radius-m);
+}
+.scene-hud {
+  -webkit-backdrop-filter: blur(6px); backdrop-filter: blur(6px);
+  letter-spacing: 0.04em;
+}
+
+/* — Brand badge: instrument-plate edge + top light. Border/hint only;
+   glyph pair already verified on both themes. */
+.brand-mark {
+  border: 1px solid rgba(255, 255, 255, 0.28);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.35),
+    0 2px 8px rgba(0, 0, 0, 0.35);
+}
+
+/* Spatial instrument composition (4-destination shell; presentation
+   only — routing, targets, breakpoints, semantics unchanged).
+   Fewer surfaces, stronger hierarchy: display type, rail indices,
+   atmospheric depth, consolidated sensing layout. */
+
+/* — Environment: deeper asymmetric field + static vignette. Both stay
+   frozen (no animation); vignette is tonal only, never data-like. */
+:root {
+  --vignette: radial-gradient(120% 100% at 50% 0%, transparent 55%, rgba(0, 0, 0, 0.32) 100%);
+}
+:root[data-theme="light"] {
+  --vignette: radial-gradient(120% 100% at 50% 0%, transparent 60%, rgba(18, 43, 48, 0.10) 100%);
+}
+body {
+  background-image:
+    var(--vignette),
+    radial-gradient(1400px 640px at 12% -6%, var(--glow-1), transparent 72%),
+    radial-gradient(900px 480px at 88% 4%, var(--glow-2), transparent 70%);
+}
+
+/* — Display typography: large primary readout values. ink-0 pairs hold
+   by a wide margin on every glass ground, both themes. */
+.hero-value {
+  font-size: 38px; font-weight: 600; letter-spacing: -0.01em;
+}
+.hero-value.hero-small { font-size: 22px; letter-spacing: 0; }
+
+/* — Rail indices: mono ordinals beside each destination (CSS counters;
+   never announced; the button text owns the accessible name). */
+.tabs { counter-reset: nav; }
+.tab { counter-increment: nav; }
+.tab::before {
+  content: counter(nav, decimal-leading-zero);
+  font-family: var(--font-mono); font-weight: 400; font-size: 11px;
+  letter-spacing: 0.08em; color: var(--ink-2); margin-right: 8px;
+}
+.tab.active::before { color: var(--accent); }
+
+/* — Rail theme toggle: quiet ghost control. Full 44px target,
+   keyboard-focusable, hover/focus language matches tabs. */
+.rail-theme {
+  display: inline-flex; align-items: center; gap: 7px;
+  background: none; border: 1px solid transparent; border-radius: var(--radius-s);
+  color: var(--ink-1); font: inherit; font-size: 12px; font-weight: 600;
+  letter-spacing: 0.06em; padding: 6px 10px; min-height: 44px; cursor: pointer;
+}
+.rail-theme:hover { color: var(--ink-0); border-color: var(--accent); }
+.rail-theme:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+.rail-theme svg { flex: none; }
+
+/* — Instrument rail (≥901px): the five destinations + theme toggle as
+   a vertical rail. Same buttons, same router, same keyboard map, same
+   44px targets — presentation only. Below 901px the strip rules above
+   apply unchanged (horizontal scroll, indices visible). */
+@media (min-width: 901px) {
+  body {
+    display: grid; grid-template-columns: 92px minmax(0, 1fr);
+    /* Explicit rows: banner/topbar/band size to content, panels absorb
+       the remainder. Without this, the spanning rail's 100vh share can
+       inflate the banner row to viewport height (solid red viewport). */
+    grid-template-rows: auto auto auto 1fr auto;
+  }
+  #source-banner, .topbar, .statusband, #panels, .foot {
+    grid-column: 2; min-width: 0;
+  }
+  .tabs {
+    grid-column: 1; grid-row: 1 / -1;
+    flex-direction: column; align-items: stretch; gap: var(--space-1);
+    position: sticky; top: 0; height: 100vh;
+    overflow-x: visible; overflow-y: auto;
+    padding: var(--space-4) var(--space-2);
+    border-bottom: none; border-right: 1px solid var(--glass-brd);
+    min-height: 0; scrollbar-width: thin;
+  }
+  .tab {
+    flex-direction: column; gap: 6px; text-align: center;
+    border: 1px solid transparent; border-radius: var(--radius-m);
+    padding: 10px 4px; font-size: 11px; white-space: normal;
+  }
+  .tab::before { display: none; }
+  .tab.active { box-shadow: inset 2px 0 0 var(--accent); }
+  .rail-theme {
+    flex-direction: column; gap: 6px; font-size: 11px;
+    padding: 10px 4px; border-radius: var(--radius-m); text-align: center;
+    margin-top: auto;
+  }
+}
+
+/* — Consolidated sensing layout: primary visualization surface carries
+   heat + frame + RSSI in one frame; sub-labels split the compact
+   acquisition block without extra cards or headings. */
+.viz-row {
+  display: grid; grid-template-columns: 1fr 1fr; gap: var(--space-3);
+  margin-top: var(--space-3);
+}
+.sub-label {
+  font-family: var(--font-mono); font-size: 11px; letter-spacing: 0.12em;
+  text-transform: uppercase; color: var(--ink-2); margin: var(--space-3) 0 var(--space-2);
+}
+.sub-label:first-of-type { margin-top: 0; }
 
 @media (max-width: 1100px) {
   #panels { max-width: 100%; }
@@ -252,12 +574,19 @@ button.linklike:focus-visible { outline: 2px solid var(--accent); outline-offset
   .topbar-status .clock { display: none; }
 }
 @media (max-width: 640px) {
+  /* Mobile GPU: soften blur and grain; geometry and targets unchanged. */
+  :root {
+    --glass-blur: blur(10px) saturate(1.15);
+    --glass-blur-soft: blur(8px) saturate(1.1);
+  }
+  body::after { opacity: 0.02; }
   .brand-text small { display: none; }
   .grid { grid-template-columns: 1fr; }
+  .viz-row { grid-template-columns: 1fr; }
   .topbar { flex-wrap: wrap; gap: var(--space-2); }
   .scene-wrap canvas { height: 260px; }
   .statusband { gap: var(--space-2); }
-  .hero-value { font-size: 24px; }
+  .hero-value { font-size: 28px; }
 }
 @media (prefers-reduced-motion: reduce) {
   * { animation: none !important; transition: none !important; }

@@ -2,7 +2,8 @@
    RF Vision native. Baseline values come from the backend (constants gated
    by docs/hardware/BASELINE.md); link health comes from /api/v1/live.
    Anything unverified renders UNKNOWN. */
-import { pillFor, fetchErrors } from "../banner.js";
+import { api } from "../api.js";
+import { pillFor, fmtUnknown, fetchErrors } from "../banner.js";
 
 export const HardwareTab = {
   init(el, ctx) {
@@ -14,11 +15,14 @@ export const HardwareTab = {
           <div class="kv" id="hw-base"></div></div>
         <div class="card"><h3>Link state — live</h3>
           <div class="kv" id="hw-link"></div></div>
-        <div class="card"><h3>Transport diagnostics</h3>
-          <div class="kv" id="hw-diag"></div>
+        <div class="card"><h3>Node registry</h3><div class="kv" id="lc-nodes"></div></div>
+        <details class="detail"><summary>Transport diagnostics</summary>
+          <div class="detail-body"><div class="kv" id="hw-diag"></div>
           <p class="state-note">Firmware identity stays UNKNOWN until a
           read-back is possible without reset. No flash / erase / reset is
-          ever initiated from this console.</p></div>
+          ever initiated from this console.</p></div></details>
+        <details class="detail"><summary>Calibration / sync</summary>
+          <div class="detail-body"><div class="kv" id="lc-cal"></div></div></details>
       </div>`;
     this.refresh();
     this.ctx.poll.acquire("hardware", ["experiment", "live"],
@@ -39,6 +43,14 @@ export const HardwareTab = {
   },
   onState() { this.renderLink(); },
   async refresh() {
+    try {
+      const [loc, cal] = await Promise.all([api.localization(), api.calibration()]);
+      this._loc = loc;
+      this._cal = cal;
+    } catch {
+      this._loc = null;
+      this._cal = null;
+    }
     this.renderAll();
   },
   renderAll() {
@@ -61,6 +73,26 @@ export const HardwareTab = {
       ].map(([k, v]) => `<dt>${k}</dt><dd>${v}</dd>`).join("");
     }
     this.renderLink();
+    this.renderNodes();
+  },
+  renderNodes() {
+    const loc = this._loc, cal = this._cal;
+    const nodes = this.el.querySelector("#lc-nodes");
+    if (nodes) {
+      nodes.innerHTML = (loc && loc.nodes.length ? loc.nodes.map((n) =>
+        [n.id, `${n.role} · pos: ${n.position_m === null ? "UNKNOWN" : `${n.position_m} m`}`])
+        : [["nodes", `<span class="unknown">UNREACHABLE / UNKNOWN</span>`]])
+        .map(([k, v]) => `<dt>${k}</dt><dd>${v}</dd>`).join("");
+    }
+    const calEl = this.el.querySelector("#lc-cal");
+    if (calEl) {
+      calEl.innerHTML = [
+        ["calibration", cal ? cal.status : "UNKNOWN"],
+        ["room width", cal ? fmtUnknown(cal.room_width_m, (v) => `${v} m`) : "UNKNOWN"],
+        ["sync", loc ? loc.sync : "UNKNOWN"],
+        ["frame", loc ? loc.frame : "UNKNOWN"],
+      ].map(([k, v]) => `<dt>${k}</dt><dd>${v}</dd>`).join("");
+    }
   },
   renderLink() {
     const snap = this.ctx.store.snapshot();

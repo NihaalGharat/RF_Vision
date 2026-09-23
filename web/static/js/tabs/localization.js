@@ -12,10 +12,9 @@ export const LocalizationTab = {
     el.innerHTML = `
       <div class="grid">
         <div class="card"><h3>Estimate (link-1d)</h3><div class="kv" id="lc-est"></div>
+          <p class="sub-label">Uncertainty</p>
+          <canvas class="viz" id="lc-bars" role="img" aria-label="Position and uncertainty bars. No validated estimator."></canvas>
           <p class="caveat">1-D link-relative only. No 2-D/3-D claim exists.</p></div>
-        <div class="card"><h3>Uncertainty</h3><canvas class="viz" id="lc-bars" role="img" aria-label="Position and uncertainty bars. No validated estimator."></canvas></div>
-        <div class="card"><h3>Node registry</h3><div class="kv" id="lc-nodes"></div></div>
-        <div class="card"><h3>Calibration / sync</h3><div class="kv" id="lc-cal"></div></div>
       </div>`;
     this.refresh();
   },
@@ -30,33 +29,15 @@ export const LocalizationTab = {
   },
   async refresh() {
     try {
-      const [loc, cal] = await Promise.all([api.localization(), api.calibration()]);
-      this._loc = loc;
-      this._cal = cal;
+      this._loc = await api.localization();
     } catch {
       this._loc = null;
-      this._cal = null;
     }
-    this.renderAll();
+    this.renderEst();
   },
   kv(id, rows) {
     this.el.querySelector(`#${id}`).innerHTML =
       rows.map(([k, v]) => `<dt>${k}</dt><dd>${v}</dd>`).join("");
-  },
-  renderAll() {
-    const loc = this._loc, cal = this._cal;
-    this.kv("lc-nodes", (loc ? loc.nodes : []).map((n) =>
-      [n.id, `${n.role} · pos: ${n.position_m === null ? "UNKNOWN" : `${n.position_m} m`}`]));
-    if (!loc || !loc.nodes.length) {
-      this.kv("lc-nodes", [["nodes", `<span class="unknown">UNREACHABLE / UNKNOWN</span>`]]);
-    }
-    this.kv("lc-cal", [
-      ["calibration", cal ? cal.status : "UNKNOWN"],
-      ["room width", cal ? fmtUnknown(cal.room_width_m, (v) => `${v} m`) : "UNKNOWN"],
-      ["sync", loc ? loc.sync : "UNKNOWN"],
-      ["frame", loc ? loc.frame : "UNKNOWN"],
-    ]);
-    this.renderEst();
   },
   renderEst() {
     const snap = this.ctx.store.snapshot();

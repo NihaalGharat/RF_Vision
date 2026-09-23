@@ -14,8 +14,7 @@ import { api } from "./api.js";
 import { OverviewTab } from "./tabs/overview.js";
 import { SensingTab } from "./tabs/sensing.js";
 import { RfFieldTab } from "./tabs/rffield.js";
-import { InsightsTab } from "./tabs/insights.js";
-import { SessionTab } from "./tabs/session.js";
+import { ResearchTab } from "./tabs/research.js";
 import { SystemTab } from "./tabs/system.js";
 
 function tickClock() {
@@ -38,9 +37,23 @@ async function boot() {
   tabs.register("overview", OverviewTab);
   tabs.register("sensing", SensingTab);
   tabs.register("rffield", RfFieldTab);
-  tabs.register("insights", InsightsTab);
-  tabs.register("session", SessionTab);
+  tabs.register("research", ResearchTab);
+  // System is the fifth rail destination: a real tab with the same
+  // router, keyboard map, and active styling — no special-case wiring.
   tabs.register("system", SystemTab);
+  // Rail theme toggle: same preference key as Console settings; applied
+  // at boot so a saved choice holds before System is ever visited.
+  try {
+    const saved = localStorage.getItem("rfvision-theme");
+    if (saved === "light" || saved === "dark") document.documentElement.dataset.theme = saved;
+  } catch { /* private mode */ }
+  const railTheme = document.getElementById("rail-theme");
+  if (railTheme) railTheme.addEventListener("click", () => {
+    const root = document.documentElement;
+    const next = root.dataset.theme === "dark" ? "light" : "dark";
+    root.dataset.theme = next;
+    try { localStorage.setItem("rfvision-theme", next); } catch { /* private mode */ }
+  });
 
   const ctx = { store, ws, api, tabs, health, poll: new PollScheduler() };
   // Global retry delegation for fetch-error rows rendered by any tab.

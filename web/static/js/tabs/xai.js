@@ -12,8 +12,9 @@ export const XaiTab = {
     this._statement = null;
     el.innerHTML = `
       <div class="grid">
-        <div class="card"><h3>Explanation status</h3><div class="kv" id="xai-status"></div></div>
-        <div class="card"><h3>Feature importance</h3><canvas class="viz" id="xai-bars" role="img" aria-label="Feature importance chart. XAI not available."></canvas>
+        <div class="card"><h3>Explanation status</h3><div class="kv" id="xai-status"></div>
+          <p class="sub-label">Feature importance</p>
+          <canvas class="viz" id="xai-bars" role="img" aria-label="Feature importance chart. XAI not available."></canvas>
           <p class="caveat" id="xai-caveat" hidden></p></div>
       </div>
       <div class="grid grid-gap">

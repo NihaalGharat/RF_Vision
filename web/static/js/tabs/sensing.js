@@ -19,18 +19,17 @@ export const SensingTab = {
     this._live = null;
     el.innerHTML = `
       <div class="grid">
-        <div class="card"><h3>Signal validity — live gate</h3>
-          <div class="kv" id="sn-valid"></div></div>
-        <div class="card"><h3>Subcarrier amplitude — latest frame</h3>
-          <canvas class="viz" id="sn-amp" role="img" aria-label="Latest amplitude frame chart. No data yet."></canvas></div>
-        <div class="card"><h3>RSSI (dBm)</h3>
-          <canvas class="viz" id="sn-rssi" role="img" aria-label="RSSI history chart. No data yet."></canvas></div>
-      </div>
-      <div class="grid grid-gap">
-        <div class="card span2">
-          <h3>Subcarrier amplitude heatmap (latest ${AMP_ROWS} frames)</h3>
-          <canvas class="viz" id="sn-heat" role="img" aria-label="Amplitude heatmap. No frames yet."></canvas></div>
-        <div class="card"><h3>Packets / sequence</h3>
+        <div class="card span2"><h3>CSI — live measurement</h3>
+          <canvas class="viz" id="sn-heat" role="img" aria-label="Amplitude heatmap. No frames yet."></canvas>
+          <p class="state-note">Heatmap: latest ${AMP_ROWS} frames, oldest first.</p>
+          <div class="viz-row">
+            <canvas class="viz" id="sn-amp" role="img" aria-label="Latest amplitude frame chart. No data yet."></canvas>
+            <canvas class="viz" id="sn-rssi" role="img" aria-label="RSSI history chart. No data yet."></canvas>
+          </div></div>
+        <div class="card"><h3>Acquisition — gate · packets</h3>
+          <p class="sub-label">Signal validity — live gate</p>
+          <div class="kv" id="sn-valid"></div>
+          <p class="sub-label">Packets / sequence</p>
           <div class="kv" id="sn-packets"></div></div>
       </div>
       <div class="grid grid-gap">
