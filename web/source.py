@@ -222,7 +222,8 @@ class LiveProvider:
     STORM_REPEAT_LINES = 32
     RATE_WINDOW_N = 240
     RSSI_WINDOW_N = 120
-    REC_MAX_SECONDS = 30.0
+    REC_MAX_SECONDS = 120.0  # bound covers a 15 s warm-up + 60 s clean
+    # protocol window plus margins (RFVISION-011); still bounded by design
 
     def __init__(self, port: str = DEFAULT_PORT, baud: int = DEFAULT_BAUD,
                  expected_bssid: str = "8c:53:c3:5b:e1:59",

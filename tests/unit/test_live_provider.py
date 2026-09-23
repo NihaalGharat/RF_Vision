@@ -250,6 +250,35 @@ class RecordingTests(unittest.TestCase):
                 self.assertEqual(got, want if want.endswith("\n")
                                  else want + "\n")
 
+    def test_recording_supports_protocol_window(self):
+        # RFVISION-011 needs 15 s warm-up + 60 s clean: a 75 s armed
+        # window must be honored, and recording must stay alive past
+        # the old 30 s cap (session age simulated, no hardware/wait).
+        import tempfile
+        line = _fixture_lines()[0]
+        provider = _provider([])
+        with tempfile.TemporaryDirectory() as tmp:
+            target = Path(tmp) / "diag.bin"
+            provider.start_recording(target, max_seconds=75)
+            self.assertEqual(provider._rec_max_s, 75)
+            provider._rec_start -= 70.0  # 70 s of session time elapsed
+            provider._record_raw(line)
+            self.assertIsNotNone(provider._rec_fp)  # still recording
+            info = provider.stop_recording()
+            self.assertEqual(info["bytes"], target.stat().st_size)
+            self.assertIn(line if line.endswith("\n") else line + "\n",
+                          target.read_text(encoding="utf-8"))
+
+    def test_recording_still_bounded(self):
+        import tempfile
+        provider = _provider([])
+        with tempfile.TemporaryDirectory() as tmp:
+            target = Path(tmp) / "diag.bin"
+            provider.start_recording(target)
+            provider._rec_start -= sources.LiveProvider.REC_MAX_SECONDS + 5
+            provider._record_raw(_fixture_lines()[0])
+            self.assertIsNone(provider._rec_fp)  # auto-stopped, bounded
+
 
 class SchemaTests(unittest.TestCase):
     def test_every_frame_validates_and_claims_nothing(self):
