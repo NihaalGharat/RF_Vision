@@ -8,8 +8,8 @@ ESP32-WiFi-CSI-Human-Sensing ``python/inference.py``, MIT) so that
 
 from __future__ import annotations
 
-from dataclasses import dataclass
-from typing import Optional
+from dataclasses import dataclass, field
+from typing import List, Optional
 
 __all__ = ["SystemState"]
 
@@ -32,3 +32,24 @@ class SystemState:
     malformed: int = 0
     model_name: str = "none (heuristic)"
     last_update: float = 0.0
+    # -- P1 showcase layer (additive; all default to "no inference") ----
+    # presence_state: ABSENT / DETECTED / MOVING / STATIONARY /
+    #   LOW_CONFIDENCE / EXITING / UNKNOWN (owner: sensing/state/persistence).
+    presence_state: str = "UNKNOWN"
+    # rf_evidence_confidence: product score in [0, 1], ALWAYS uncalibrated
+    # (owner: sensing/confidence). None = no score (never zero-as-unknown).
+    rf_evidence_confidence: Optional[float] = None
+    confidence_calibration: str = "UNCALIBRATED"
+    # provenance: UNKNOWN (no inference) / TRANSPORT (signal only) /
+    #   RF-INFERRED (heuristic/model output, never a measurement).
+    provenance: str = "UNKNOWN"
+    # node_mode: UNKNOWN / SINGLE / DUAL / SINGLE-DEGRADED.
+    node_mode: str = "UNKNOWN"
+    # evidence_statement: canned factual sentence for the current state
+    # (owner: ai/xai.factual_evidence_statement) or None.
+    evidence_statement: Optional[str] = None
+    # trail: recent RF-inferred 1-D positions in [0, 1] (oldest first),
+    # for the 1-D trajectory view. Empty = none available.
+    trail: List[float] = field(default_factory=list)
+    # xai_status: NOT AVAILABLE until a validated explanation exists.
+    xai_status: str = "NOT AVAILABLE"

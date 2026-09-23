@@ -30,6 +30,11 @@ from sensing.state.state import SystemState
 from sensing.motion.motion import MovementDetector
 from sensing.presence.presence import PresenceSmoother
 from sensing.activity.activity import label_activity
+from sensing.confidence.confidence import (
+    CALIBRATION_LABEL,
+    aggregate_evidence,
+)
+from sensing.state.persistence import PresencePersistence
 
 # Backward-compatible re-exports (canonical homes: sensing.state,
 # sensing.motion). ``from sensing.inference_engine import SystemState``
@@ -182,6 +187,7 @@ class InferenceEngine:
         self._amplitude_history: Deque[np.ndarray] = deque(maxlen=300)
         self._rssi_history: Deque[float] = deque(maxlen=300)
         self._position_history: Deque[Optional[float]] = deque(maxlen=200)
+        self._persistence = PresencePersistence()
         self.state = SystemState(model_name=self.model_name)
 
     # ------------------------------------------------------------------
@@ -242,6 +248,25 @@ class InferenceEngine:
             self.state.position_filtered = position_filtered
             self.state.confidence = smoothed_presence if person else None
             self.state.latency_ms = self.latency_ms
+            # -- P1 showcase layer (additive; inference math above untouched)
+            score, _contributors = aggregate_evidence(
+                presence_prob=smoothed_presence,
+                movement_prob=movement_prob)
+            state_name, shown = self._persistence.update(
+                presence_label=presence_label,
+                movement_label=self.state.movement_label,
+                confidence=score)
+            self.state.presence_state = state_name
+            self.state.rf_evidence_confidence = shown
+            self.state.confidence_calibration = CALIBRATION_LABEL
+            self.state.provenance = "RF-INFERRED"
+            self.state.trail = self._trail_locked()
+            try:
+                from ai.xai.xai import factual_evidence_statement
+                self.state.evidence_statement = factual_evidence_statement(
+                    state_name, self.state.movement_label)
+            except Exception:
+                self.state.evidence_statement = None
 
     # ------------------------------------------------------------------
     def update_link_status(self, online: bool, rate: float, packets: int,
@@ -252,6 +277,80 @@ class InferenceEngine:
             self.state.csi_rate = rate
             self.state.packets = packets
             self.state.malformed = malformed
+
+    def _trail_locked(self, limit: int = 60) -> list:
+        """Recent non-None filtered 1-D positions, oldest first (need lock)."""
+        vals = [v for v in self._position_history if v is not None]
+        return [float(v) for v in vals[-max(limit, 1):]]
+
+    def reset_showcase(self) -> None:
+        """Forget showcase/persistence state (new live session)."""
+        with self._lock:
+            self._persistence.reset()
+            self._position_history.clear()
+            self.state.presence_label = "UNKNOWN"
+            self.state.presence_probability = None
+            self.state.movement_label = "UNKNOWN"
+            self.state.movement_probability = None
+            self.state.position_raw = None
+            self.state.position_filtered = None
+            self.state.confidence = None
+            self.state.presence_state = "UNKNOWN"
+            self.state.rf_evidence_confidence = None
+            self.state.provenance = "UNKNOWN"
+            self.state.node_mode = "UNKNOWN"
+            self.state.evidence_statement = None
+            self.state.trail = []
+
+    def showcase_snapshot(self, *, node_mode: str = "SINGLE",
+                          nodes_available: int = 1, nodes_total: int = 1,
+                          data_quality_ok: bool = True,
+                          stale: bool = False,
+                          derate: float = 1.0) -> dict:
+        """P1 showcase payload: additive contract-v3 fields (JSON-safe).
+
+        Recomputes the evidence score with the caller's session context
+        (node topology, quality, staleness, degrade derate) WITHOUT
+        advancing persistence — time advances only in ``process_sample``.
+        Safe to call per broadcast frame (~10 Hz) from any thread.
+        """
+        from ai.xai.xai import factual_evidence_statement
+        with self._lock:
+            presence_label = self.state.presence_label
+            movement_label = self.state.movement_label
+            presence_prob = self.state.presence_probability
+            movement_prob = self.state.movement_probability
+            persisted_state, _ = self._persistence.current()
+            trail = self._trail_locked()
+            score, _contributors = aggregate_evidence(
+                presence_prob=presence_prob, movement_prob=movement_prob,
+                nodes_available=nodes_available, nodes_total=nodes_total,
+                data_quality_ok=data_quality_ok, stale=stale, derate=derate)
+            if stale or presence_prob is None:
+                # Frozen last-known: show, don't score.
+                display_state = (persisted_state
+                                 if persisted_state != "UNKNOWN"
+                                 else "UNKNOWN")
+                shown = None
+            else:
+                display_state, shown = self._persistence.preview(
+                    presence_label=presence_label,
+                    movement_label=movement_label, confidence=score)
+        try:
+            statement = factual_evidence_statement(
+                display_state, movement_label)
+        except ValueError:
+            statement = None
+        return {
+            "presence_state": display_state,
+            "rf_evidence_confidence": shown,
+            "confidence_calibration": CALIBRATION_LABEL,
+            "provenance": ("RF-INFERRED" if presence_prob is not None
+                           else "UNKNOWN"),
+            "node_mode": node_mode,
+            "evidence_statement": statement,
+            "trail": trail,
+        }
 
     # ------------------------------------------------------------------
     def snapshot_for_plot(self) -> dict:

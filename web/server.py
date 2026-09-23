@@ -40,6 +40,12 @@ from web import contracts
 from web import source as sources
 from web import ws as ws_codec
 
+try:
+    # Stdlib-only module; safe to import at top level.
+    from sensing.confidence.confidence import DEGRADE_DERATE
+except Exception:  # pragma: no cover (packaging fallback)
+    DEGRADE_DERATE = 0.75
+
 __all__ = ["DEFAULT_PORT", "ConsoleState", "ConsoleHandler",
            "build_server", "main", "BASELINE", "FIRMWARE",
            "set_dual_session", "dual_status_payload"]
@@ -92,14 +98,95 @@ class ConsoleState:
         self.last_seq: Optional[int] = None
         self.subscribers: List[Any] = []  # raw sockets
         self._pump: Optional[threading.Thread] = None
+        # P1 showcase: deterministic InferenceEngine fed by the live
+        # provider's sample seam. None = transport-only (deps missing or
+        # non-live source) — snapshots stay honestly UNKNOWN.
+        self._showcase_engine: Any = None
+
+    # -- P1 truthful showcase (additive; never touches acquisition) ----
+    def _build_showcase_engine(self) -> Any:
+        """Fresh heuristic InferenceEngine, or None when unavailable.
+
+        Guarded: numpy/scipy/sklearn/config must all import; any failure
+        degrades honestly to transport-only snapshots (no exception, no
+        partial wiring). Models are None by design — heuristic fallback,
+        labelled as such downstream.
+        """
+        try:
+            from config.settings import load_config
+            from sensing.inference_engine import InferenceEngine
+            cfg = load_config()
+            return InferenceEngine(cfg, None)
+        except Exception:
+            return None
+
+    def _showcase_topology(self) -> Any:
+        """(node_mode, available, total, derate) from the DUAL attachment.
+
+        No DUAL session = single-console operation. A DUAL session with a
+        DISCONNECTED node = SINGLE-DEGRADED with the documented product
+        derate applied to confidence (directive §8, product policy).
+        """
+        dual = DUAL
+        if dual is None:
+            return ("SINGLE", 1, 1, 1.0)
+        try:
+            per = dual.session_stats().get("per_node", {})
+        except Exception:
+            return ("UNKNOWN", 1, 1, 1.0)
+        if not per:
+            return ("UNKNOWN", 1, 1, 1.0)
+        down = [nid for nid, node in per.items()
+                if node.get("source_state") == "DISCONNECTED"]
+        if down:
+            return ("SINGLE-DEGRADED", 1, max(len(per), 1), DEGRADE_DERATE)
+        return ("DUAL", len(per), max(len(per), 1), 1.0)
+
+    def _maybe_enrich(self, event: Dict[str, Any]) -> Dict[str, Any]:
+        """Merge P1 showcase fields into a sensing.snapshot (best effort).
+
+        Failures (or no engine) leave the transport-only event untouched —
+        enrichment must never break the broadcast pump.
+        """
+        with self.lock:
+            engine = self._showcase_engine
+        if engine is None or not isinstance(event, dict):
+            return event
+        if event.get("type") != "sensing.snapshot":
+            return event
+        try:
+            node_mode, avail, total, derate = self._showcase_topology()
+            quality = self.effective_state() in contracts.LIVE_LIKE_STATES
+            snap = engine.showcase_snapshot(
+                node_mode=node_mode, nodes_available=avail,
+                nodes_total=total, data_quality_ok=quality,
+                stale=False, derate=derate)
+            payload = event.get("payload")
+            if isinstance(payload, dict):
+                payload.update(contracts.showcase_fields(**snap))
+        except Exception:
+            pass
+        return event
 
     # -- source / stream control -------------------------------------
     def set_source(self, mode: str, **kwargs: Any) -> Dict[str, Any]:
-        """Switch provider (raises LiveUnavailable/ContractError/FileNotFound)."""
+        """Switch provider (raises LiveUnavailable/ContractError/FileNotFound).
+
+        Selecting ``live`` auto-attaches a fresh P1 showcase engine via the
+        provider's sample seam when the DSP stack imports; any other mode
+        (or missing deps) drops the engine so snapshots stay honestly
+        transport-only. One engine per live session (fresh persistence).
+        """
+        engine = None
+        if mode == "live" and "sample_observer" not in kwargs:
+            engine = self._build_showcase_engine()
+            if engine is not None:
+                kwargs["sample_observer"] = engine.process_sample
         provider = sources.make_provider(mode, **kwargs)
         with self.lock:
             old = self.provider
             self.provider = provider
+            self._showcase_engine = engine
             self.streaming = False
             self.packets = 0
             self.malformed = 0
@@ -170,6 +257,7 @@ class ConsoleState:
                 with self.lock:
                     if not self.streaming:
                         break
+                event = self._maybe_enrich(event)
                 text = json.dumps(event)
                 with self.lock:
                     self.packets += 1
@@ -313,8 +401,11 @@ class ConsoleHandler(BaseHTTPRequestHandler):
         elif path.startswith("/static/"):
             self._static(path[len("/static/"):])
         elif path == "/api/v1/health":
+            node_mode = STATE._showcase_topology()[0]
             self._json(contracts.health_payload(
-                status="ok", version=WEB_VERSION,
+                status=("degraded" if node_mode == "SINGLE-DEGRADED"
+                        else "ok"),
+                version=WEB_VERSION,
                 uptime_s=time.time() - STATE.started_at,
                 source="rfvision-web", source_state=STATE.effective_state()))
         elif path == "/api/v1/status":

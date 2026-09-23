@@ -41,8 +41,19 @@ export const SensingTab = {
           consumed until validated. Displayed as GATED, never synthesized.</p></div>
         <div class="card"><h3>Presence / activity — NOT VALIDATED</h3>
           <canvas class="viz" id="sn-bars"></canvas>
+          <div class="kv" id="sn-showcase"></div>
           <p class="caveat">NOT VALIDATED — no human-presence claim, no
-          activity classification. UI fields only; do not cite.</p></div>
+          activity classification. UI fields only; do not cite. RF Evidence
+          Confidence below is UNCALIBRATED product state, never a
+          probability.</p></div>
+      </div>
+      <div class="grid" style="margin-top:12px">
+        <div class="card" style="grid-column: span 2">
+          <h3>1-D trajectory — RF-inferred position trail</h3>
+          <canvas class="viz" id="sn-trail"></canvas>
+          <p class="state-note">Recent RF-inferred link positions, oldest
+          first. Empty = none available (no models, or nobody detected).
+          NOT VALIDATED — do not cite.</p></div>
       </div>`;
     this.paint();
     this._timer = setInterval(() => this.pollLive(), 2000);
@@ -65,6 +76,9 @@ export const SensingTab = {
     if (typeof p.rssi === "number") {
       this.rssi.push(p.rssi);
       if (this.rssi.length > RSSI_N) this.rssi.shift();
+    }
+    if (Array.isArray(p.trail) && p.trail.length) {
+      this._trail = p.trail.slice(-60);
     }
     this.paint();
   },
@@ -130,7 +144,23 @@ export const SensingTab = {
       { label: "presence_prob", value: p ? p.presence_prob : null },
       { label: "movement_prob", value: p ? p.movement_prob : null },
       { label: "confidence", value: p ? p.confidence : null },
+      { label: "rf_evidence", value: p ? (p.rf_evidence_confidence ?? null) : null },
     ]);
+    drawSparkline(this.canvas("sn-trail"), this._trail || null,
+      { label: "link position t" });
+    const sc = this.el.querySelector("#sn-showcase");
+    if (sc) {
+      const rows = p ? [
+        ["state", p.presence_state ?? "UNKNOWN"],
+        ["rf evidence", p.rf_evidence_confidence != null
+          ? `${(p.rf_evidence_confidence * 100).toFixed(0)} % ` +
+            `<span class="state-note">(UNCALIBRATED)</span>` : "none"],
+        ["provenance", p.provenance ?? "UNKNOWN"],
+        ["nodes", p.node_mode ?? "UNKNOWN"],
+      ] : [["state", "no frames yet"]];
+      sc.innerHTML = rows.map(([k, v]) =>
+        `<dt>${k}</dt><dd>${v}</dd>`).join("");
+    }
     this.renderValidity();
   },
 };

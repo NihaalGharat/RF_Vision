@@ -36,6 +36,10 @@ __all__ = [
     "calibration_payload",
     "localization_payload",
     "xai_payload",
+    "showcase_fields",
+    "PRESENCE_STATES",
+    "NODE_MODES",
+    "SHOWCASE_PROVENANCE",
     "node_status_payload",
     "nodes_payload",
     "validate_envelope",
@@ -44,7 +48,38 @@ __all__ = [
 #: Contract version served at GET /api/v1/health (bump on payload change).
 #: v2 adds the two-node ``/api/v1/nodes`` payloads (additive: every v1
 #: builder keeps its exact shape).
-CONTRACT_VERSION = 2
+#: v3 adds the additive P1 showcase fields to ``sensing.snapshot``
+#: (presence_state, RF evidence confidence, provenance, node mode,
+#: evidence statement, 1-D trail) — all optional, all default to
+#: "no inference", so v2 payloads remain valid v3 payloads.
+CONTRACT_VERSION = 3
+
+#: P1 showcase presence states (UNKNOWN = no inference attached; the
+#: transport-only path never claims a human state).
+PRESENCE_STATES = (
+    "ABSENT",
+    "DETECTED",
+    "MOVING",
+    "STATIONARY",
+    "LOW_CONFIDENCE",
+    "EXITING",
+    "UNKNOWN",
+)
+
+#: Showcase node modes (UNKNOWN = no showcase attached).
+NODE_MODES = (
+    "UNKNOWN",
+    "SINGLE",
+    "DUAL",
+    "SINGLE-DEGRADED",
+)
+
+#: Showcase provenance tokens.
+SHOWCASE_PROVENANCE = (
+    "UNKNOWN",
+    "TRANSPORT",
+    "RF-INFERRED",
+)
 
 #: Allowed data-provenance states (operation §6). No other value may be
 #: emitted or accepted.
@@ -168,6 +203,55 @@ def sensing_snapshot_payload(*, presence: str, presence_prob: Optional[float],
         "amplitudes": amplitudes,
         "phases": phases,
         "validated": bool(validated),
+    }
+
+
+def showcase_fields(*, presence_state: str = "UNKNOWN",
+                     rf_evidence_confidence: Optional[float] = None,
+                     confidence_calibration: str = "UNCALIBRATED",
+                     provenance: str = "UNKNOWN",
+                     node_mode: str = "UNKNOWN",
+                     evidence_statement: Optional[str] = None,
+                     trail: Optional[List[float]] = None) -> Dict[str, Any]:
+    """P1 showcase layer for ``sensing.snapshot`` (contract v3, additive).
+
+    Every field defaults to "no inference" so transport-only payloads
+    (``LiveProvider`` without an attached showcase engine) stay exactly
+    as honest as v2: UNKNOWN presence_state, no confidence, TRANSPORT or
+    UNKNOWN provenance. ``rf_evidence_confidence`` must be None (not 0)
+    when no score exists; the UI renders None as "no confidence".
+    """
+    if presence_state not in PRESENCE_STATES:
+        raise ContractError(f"bad presence_state: {presence_state!r}")
+    if rf_evidence_confidence is not None:
+        rf_evidence_confidence = _num(
+            rf_evidence_confidence, "rf_evidence_confidence")
+        if not 0.0 <= rf_evidence_confidence <= 1.0:
+            raise ContractError(
+                "rf_evidence_confidence outside [0,1]: "
+                f"{rf_evidence_confidence}")
+    if confidence_calibration != "UNCALIBRATED":
+        raise ContractError(
+            "confidence_calibration must be UNCALIBRATED until a "
+            "calibration study exists; "
+            f"got {confidence_calibration!r}")
+    if provenance not in SHOWCASE_PROVENANCE:
+        raise ContractError(f"bad provenance: {provenance!r}")
+    if node_mode not in NODE_MODES:
+        raise ContractError(f"bad node_mode: {node_mode!r}")
+    clean_trail = None
+    if trail is not None:
+        clean_trail = [float(v) for v in trail]
+        if not all(0.0 <= v <= 1.0 for v in clean_trail):
+            raise ContractError("trail positions must be in [0,1]")
+    return {
+        "presence_state": presence_state,
+        "rf_evidence_confidence": rf_evidence_confidence,
+        "confidence_calibration": confidence_calibration,
+        "provenance": provenance,
+        "node_mode": node_mode,
+        "evidence_statement": evidence_statement,
+        "trail": clean_trail if clean_trail is not None else [],
     }
 
 

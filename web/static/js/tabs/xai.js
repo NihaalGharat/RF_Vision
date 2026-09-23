@@ -9,15 +9,37 @@ export const XaiTab = {
   init(el, ctx) {
     this.el = el;
     this.ctx = ctx;
+    this._statement = null;
     el.innerHTML = `
       <div class="grid">
         <div class="card"><h3>Explanation status</h3><div class="kv" id="xai-status"></div></div>
         <div class="card"><h3>Feature importance</h3><canvas class="viz" id="xai-bars"></canvas>
           <p class="caveat" id="xai-caveat" hidden></p></div>
+      </div>
+      <div class="grid" style="margin-top:12px">
+        <div class="card" style="grid-column: span 2"><h3>Latest RF evidence — factual, not explanatory</h3>
+          <div class="kv" id="xai-evidence"></div>
+          <p class="state-note">Canned sentence for the current showcase
+          state. Describes reported evidence only; never a cause, never a
+          model explanation.</p></div>
       </div>`;
     this.refresh();
   },
   onShow() { this.refresh(); },
+  onEvent(ev) {
+    if (!ev || ev.type !== "sensing.snapshot") return;
+    const stmt = ev.payload ? ev.payload.evidence_statement : null;
+    if (typeof stmt === "string" && stmt) {
+      this._statement = stmt;
+      this.renderEvidence();
+    }
+  },
+  renderEvidence() {
+    const node = this.el.querySelector("#xai-evidence");
+    if (node) {
+      node.innerHTML = `<dt>rf evidence</dt><dd>${this._statement || "none yet"}</dd>`;
+    }
+  },
   async refresh() {
     let data = null;
     try {
@@ -46,6 +68,7 @@ export const XaiTab = {
         `<dt>reason</dt><dd>no validated model, no validated explanation</dd>`;
       drawBars(bars, []);
       caveat.hidden = true;
+      this.renderEvidence();
       return;
     }
     status.innerHTML =
@@ -59,5 +82,6 @@ export const XaiTab = {
     })));
     caveat.hidden = false;
     caveat.textContent = `Caveat (mandatory): ${d.caveats} Scores are comparative, never causal.`;
+    this.renderEvidence();
   },
 };

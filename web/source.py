@@ -169,6 +169,9 @@ class SimulatedProvider:
             phases=phases,
             validated=False,
         )
+        # Contract v3 keys always present; simulated mode has no inference
+        # attached, so honest defaults (UNKNOWN / no score / no trail).
+        payload.update(contracts.showcase_fields())
         payload["source_state"] = self.source_state
         event = contracts.wrap_event("sensing.snapshot", payload,
                                      source="rfvision-web(simulated)",
@@ -233,13 +236,19 @@ class LiveProvider:
                  gate_window_s: float = GATE_WINDOW_S,
                  settle_s: float = 2.0,
                  frame_hz: float = FRAME_HZ,
-                 stale_after_s: float = STALE_AFTER_S) -> None:
+                 stale_after_s: float = STALE_AFTER_S,
+                 sample_observer: Any = None) -> None:
         self.port = str(port)
         self.baud = int(baud)
         self.expected_bssid = str(expected_bssid).lower()
         self.expected_channel = int(expected_channel)
         self.board_mac = str(board_mac)
         self._factory_source = line_source
+        # P1 showcase seam: optional callable invoked with each newly
+        # validated CsiSample AFTER all acquisition bookkeeping. Default
+        # None = zero behavior change (validated path untouched). The seam
+        # must never break capture: observer exceptions are swallowed.
+        self._sample_observer = sample_observer
         self.gate_window_s = float(gate_window_s)
         self.settle_s = float(settle_s)
         self.frame_hz = float(frame_hz)
@@ -383,6 +392,12 @@ class LiveProvider:
         self._arrivals.append(now)
         self._last_valid_ts = time.time()
         self._last_sample = sample
+        observer = self._sample_observer
+        if observer is not None:
+            try:
+                observer(sample)
+            except Exception:
+                pass  # showcase seam never breaks acquisition
         self._rssi.append(sample.rssi)
         self._channels[sample.channel] = self._channels.get(
             sample.channel, 0) + 1
@@ -629,6 +644,9 @@ class LiveProvider:
             position=None, position_m=None, confidence=None,
             rssi=float(sample.rssi), amplitudes=amps, phases=None,
             validated=False)
+        # Contract v3 keys always present; the transport path claims no
+        # inference — the showcase engine overwrites these when attached.
+        payload.update(contracts.showcase_fields(provenance="TRANSPORT"))
         payload["source_state"] = self.source_state
         event = contracts.wrap_event("sensing.snapshot", payload,
                                      source="rfvision-web(live)",
@@ -774,11 +792,14 @@ def make_provider(mode: str, **kwargs: Any) -> Any:
     if mode == "simulated":
         return SimulatedProvider(seed=int(kwargs.get("seed", 7)))
     if mode == "live":
+        extra: Dict[str, Any] = {}
+        if kwargs.get("sample_observer") is not None:
+            extra["sample_observer"] = kwargs.get("sample_observer")
         return LiveProvider(
             port=str(kwargs.get("port", DEFAULT_PORT)),
             baud=int(kwargs.get("baud", DEFAULT_BAUD)),
             expected_bssid=str(kwargs.get(
                 "expected_bssid", "8c:53:c3:5b:e1:59")),
             expected_channel=int(kwargs.get("expected_channel", 1)),
-            line_source=kwargs.get("line_source", None))
+            line_source=kwargs.get("line_source", None), **extra)
     raise contracts.ContractError(f"unknown source mode: {mode!r}")

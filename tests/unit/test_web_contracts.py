@@ -130,7 +130,7 @@ class PayloadSchemaTests(unittest.TestCase):
                 uncertainty=-1.0, room_width_m=None, sync="NONE", nodes=[])
 
     def test_nodes_v2_additive(self):
-        self.assertEqual(contracts.CONTRACT_VERSION, 2)
+        self.assertEqual(contracts.CONTRACT_VERSION, 3)
         node = contracts.node_status_payload(
             node_id="esp32-a", board_mac="b0:3f:d3:70:20:3c",
             port="/dev/ttyUSB1", connection="SYNCED",

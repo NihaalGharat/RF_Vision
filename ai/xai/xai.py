@@ -21,7 +21,8 @@ from typing import Callable, Dict, List, Optional, Sequence
 
 import numpy as np
 
-__all__ = ["Explanation", "rf_importance", "permutation_importance"]
+__all__ = ["Explanation", "rf_importance", "permutation_importance",
+           "factual_evidence_statement"]
 
 
 class Explanation(dict):
@@ -60,6 +61,38 @@ def rf_importance(rf_model, feature_names: Sequence[str]) -> Explanation:
         scores, method="rf_impurity",
         caveats="Impurity importance is descriptive (split utility), not a "
                 "validated physical explanation of RF propagation.")
+
+
+def factual_evidence_statement(presence_state: str,
+                               movement_label: str = "UNKNOWN") -> str:
+    """Canned factual sentence for a showcase presence state (P1).
+
+    Pure presentation mapping — NOT an explanation engine. Every sentence
+    describes only what the deterministic pipeline already reported
+    (disturbance present/absent, variation up/down). No scores, no causes,
+    no physics. Unknown states degrade to an explicit no-conclusion
+    sentence rather than silence.
+    """
+    statements = {
+        "MOVING": ("MOVING — Evidence: temporal RF variation increased "
+                   "on the sensing input."),
+        "STATIONARY": ("HUMAN DETECTED — STATIONARY — Evidence: sustained "
+                       "RF disturbance on the sensing input."),
+        "DETECTED": ("HUMAN DETECTED — Evidence: sustained RF disturbance "
+                     "across the sensing input."),
+        "LOW_CONFIDENCE": ("UNCERTAIN — Evidence: weak or inconsistent RF "
+                           "disturbance; no conclusion."),
+        "EXITING": ("EXITING — Evidence: RF disturbance fading; "
+                    "last-known representation shown briefly."),
+        "ABSENT": ("ABSENT — Evidence: sensing input at baseline; "
+                   "no human detected."),
+    }
+    text = statements.get(str(presence_state),
+                          "NO CONCLUSION — Evidence: insufficient RF "
+                          "evidence for any state.")
+    if str(movement_label) not in ("MOVING", "STATIC", "UNKNOWN"):
+        raise ValueError(f"bad movement label: {movement_label!r}")
+    return text
 
 
 def permutation_importance(predict: Callable[[np.ndarray], float],

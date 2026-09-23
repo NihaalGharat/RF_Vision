@@ -79,6 +79,10 @@ export const RfFieldTab = {
     const p = ev.payload;
     this._amps = p.amplitudes || null;
     this._pos = (typeof p.position === "number") ? p.position : null;
+    // Honest link-figure: the 3D marker follows measured/inferred state
+    // only; presence_state rides the HUD, never a body mesh (none exists).
+    this._showState = (p.presence_state && p.presence_state !== "UNKNOWN")
+      ? `${p.presence_state} (RF-INFERRED, UNCALIBRATED)` : "";
     this.paint();
   },
   onState() { this.paint(); },
@@ -92,12 +96,14 @@ export const RfFieldTab = {
     const canvas = this.el.querySelector("#rf-room");
     if (canvas) drawRoom2d(canvas, room);
     if (!this._failed) {
+      const hud = [this._hudExtra, this._showState]
+        .filter(Boolean).join(" · ");
       this.scene.setModel({
         widthM: this._widthM ?? null,
         amplitudes: this._amps ?? null,
         positionT: this._pos ?? null,
         uncertainty: null, // no validated uncertainty yet
-        hudExtra: this._hudExtra || null,
+        hudExtra: hud || null,
       });
     }
   },

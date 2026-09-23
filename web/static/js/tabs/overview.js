@@ -153,8 +153,12 @@ export const OverviewTab = {
         continue;
       }
       const us = (v) => (v != null ? `${(v / 1000).toFixed(1)} ms` : "UNKNOWN");
+      const bad = n.connection === "DEGRADED" || n.connection === "DISCONNECTED";
+      const stateCell = bad
+        ? `<span class="err-text">${n.connection} — DEGRADED MODE</span>`
+        : n.connection;
       this.kv(slot, [
-        ["state", n.connection],
+        ["state", stateCell],
         ["rate", num(n.csi_rate, (v) => `${v.toFixed(1)} Hz`)],
         ["valid", n.valid_pct != null ? `${n.valid_pct.toFixed(2)} % (${n.valid})` : "UNKNOWN"],
         ["rssi", n.rssi != null ? `${n.rssi} dBm` : "UNKNOWN"],
@@ -181,6 +185,14 @@ export const OverviewTab = {
       ["rssi (dBm)", num(p.rssi, (v) => v.toFixed(0))],
       ["tones", Array.isArray(p.amplitudes) ? p.amplitudes.length : "UNKNOWN"],
       ["presence", `${p.presence} <span class="state-note">(NOT VALIDATED)</span>`],
+      ["showcase", p.presence_state && p.presence_state !== "UNKNOWN"
+        ? `${p.presence_state} · RF-evidence ` +
+          `${p.rf_evidence_confidence != null
+            ? (p.rf_evidence_confidence * 100).toFixed(0) + " %"
+            : "none"} ` +
+          `<span class="state-note">(UNCALIBRATED, ` +
+          `${p.provenance || "?"}, ${p.node_mode || "?"})</span>`
+        : "no inference attached"],
     ]);
   },
 };
