@@ -53,4 +53,10 @@ export const api = {
   localization: () => request("GET", "/api/v1/localization"),
   xai: () => request("GET", "/api/v1/xai"),
   nodes: () => request("GET", "/api/v1/nodes"),
+  network: () => request("GET", "/api/v1/network"),
+  provision: (ssid, password) =>
+    request("POST", "/api/v1/network/provision", { ssid, password }),
+  dualStart: () => request("POST", "/api/v1/dual/start"),
+  dualStop: () => request("POST", "/api/v1/dual/stop"),
+  rfReadiness: () => request("GET", "/api/v1/rf_readiness"),
 };

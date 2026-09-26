@@ -15,8 +15,14 @@ Endpoints (all JSON unless noted):
 - ``POST /api/v1/source {"mode": off|fixture|simulated|live}``
 - ``GET /api/v1/live`` — live session telemetry (or available:false)
 - ``GET /api/v1/nodes`` — two-node telemetry (or available:false, contract v2)
+- ``POST /api/v1/dual/start|stop`` — backend DualNodeSession lifecycle
+  (both nodes required; refuses while the single live source runs, and
+  provisioning / live-source selection refuse while dual runs)
 - ``POST /api/v1/live/record/start|stop`` — bounded diagnostic capture
 - ``GET /api/v1/experiment|calibration|localization|xai``
+- ``GET /api/v1/network`` — active laptop Wi-Fi + ESP32 compatibility
+- ``POST /api/v1/network/provision`` — serial-provision ESP32-A/B
+- ``GET /api/v1/rf_readiness`` — honest network→nodes→CSI→sync chain
 - ``GET /ws/sensing`` (Upgrade: websocket) — envelope stream + commands:
   ``{"command": "ping"|"stream:start"|"stream:stop"|"set_source", ...}``
 
@@ -37,8 +43,10 @@ from urllib.parse import urlparse
 
 from web import __version__ as WEB_VERSION
 from web import contracts
+from web import network as network_api
 from web import source as sources
 from web import ws as ws_codec
+from web.dual_node import DualNodeSession
 
 try:
     # Stdlib-only module; safe to import at top level.
@@ -300,11 +308,81 @@ STATE = ConsoleState()
 #: Set via :func:`set_dual_session`; read by GET /api/v1/nodes.
 DUAL = None
 
+#: Serializes dual-session check-and-set (duplicate-start prevention).
+_dual_lock = threading.Lock()
+
+#: Session constructor (seam for focused tests; production = DualNodeSession).
+_DUAL_SESSION_FACTORY = DualNodeSession
+
 
 def set_dual_session(session) -> None:
     """Attach (or detach with None) the live DualNodeSession."""
     global DUAL
     DUAL = session
+
+
+def dual_start() -> Dict[str, Any]:
+    """Start + attach the backend DualNodeSession (both nodes required).
+
+    Uses the last discovered network context for the expected BSSID /
+    channel (constructor defaults otherwise). Raises :class:`RuntimeError`
+    when the session cannot run (live source holds ports, a session is
+    already attached, or a board has no resolved device).
+    """
+    with _dual_lock:
+        if DUAL is not None:
+            raise RuntimeError("dual session already running "
+                               "(POST /api/v1/dual/stop first)")
+        if STATE.streaming or STATE.provider.mode == "live":
+            raise RuntimeError("stop the live source first "
+                               "(POST /api/v1/source {\"mode\": \"off\"}) "
+                               "before starting the dual session")
+        ctx = network_api.last_network()
+        kwargs: Dict[str, Any] = {}
+        if ctx is not None:
+            if ctx.bssid:
+                kwargs["expected_bssid"] = ctx.bssid
+            if ctx.channel is not None:
+                kwargs["expected_channel"] = ctx.channel
+        session = _DUAL_SESSION_FACTORY(**kwargs)
+        try:
+            devices = session.start()
+        except ValueError as exc:
+            # Fail-fast board resolution (missing device): unavailable,
+            # never a bad request — surface as a 409 via RuntimeError.
+            try:
+                session.stop()
+            except Exception:
+                pass
+            raise RuntimeError(str(exc)) from exc
+        except Exception:
+            try:
+                session.stop()
+            except Exception:
+                pass
+            raise
+        set_dual_session(session)
+        return {"running": True, "nodes": list(session.node_ids),
+                "devices": devices,
+                "expected": {"bssid": session.expected_bssid,
+                             "channel": session.expected_channel},
+                "note": "poll GET /api/v1/nodes and GET "
+                        "/api/v1/rf_readiness (CSI + sync gate RF READY)"}
+
+
+def dual_stop() -> Dict[str, Any]:
+    """Stop + detach the backend DualNodeSession (idempotent)."""
+    with _dual_lock:
+        session = DUAL
+        if session is None:
+            return {"running": False,
+                    "reason": "no dual session running"}
+        try:
+            session.stop()
+        finally:
+            set_dual_session(None)
+        return {"running": False,
+                "reason": "dual session stopped; ports released"}
 
 
 def dual_status_payload() -> Dict[str, Any]:
@@ -398,6 +476,9 @@ class ConsoleHandler(BaseHTTPRequestHandler):
             self._handle_ws()
         elif path in ("/", "/index.html"):
             self._static("index.html")
+        elif path == "/react":
+            # Phase-1 React console shell (coexists with the legacy UI at /).
+            self._static("react/index.html")
         elif path.startswith("/static/"):
             self._static(path[len("/static/"):])
         elif path == "/api/v1/health":
@@ -503,6 +584,16 @@ class ConsoleHandler(BaseHTTPRequestHandler):
             self._json(contracts.xai_payload(available=False))
         elif path == "/api/v1/nodes":
             self._json(dual_status_payload())
+        elif path == "/api/v1/network":
+            self._json(network_api.network_status_payload())
+        elif path == "/api/v1/rf_readiness":
+            dual_info = (DUAL.session_stats() if DUAL is not None
+                         else None)
+            expected = (2 if (DUAL is not None or
+                              STATE.provider.mode != "live")
+                        else 1)
+            self._json(network_api.rf_readiness_payload(
+                dual_info=dual_info, nodes_expected=expected))
         elif path == "/api/v1/live":
             live = (STATE.provider if STATE.provider.mode == "live"
                     else None)
@@ -524,6 +615,11 @@ class ConsoleHandler(BaseHTTPRequestHandler):
         elif path == "/api/v1/source":
             body = self._read_json()
             mode = str(body.get("mode", ""))
+            if mode == "live" and DUAL is not None:
+                self._error("stop the dual session first "
+                            "(POST /api/v1/dual/stop) "
+                            "before selecting a live source", 409)
+                return
             kwargs: Dict[str, Any] = {}
             if mode == "fixture" and body.get("path"):
                 kwargs["path"] = str(body["path"])
@@ -581,6 +677,43 @@ class ConsoleHandler(BaseHTTPRequestHandler):
                 return
             info = live.stop_recording()
             self._json({"recording": False, "manifest": info})
+        elif path == "/api/v1/network/provision":
+            # Ports must be free and RFV_* lines must never enter the
+            # CSI parser: refuse while any live source holds them.
+            if DUAL is not None:
+                self._error("stop the dual session first "
+                            "(POST /api/v1/dual/stop) "
+                            "before provisioning", 409)
+                return
+            if STATE.streaming or STATE.provider.mode == "live":
+                self._error("stop the live source first "
+                            "(POST /api/v1/source {\"mode\": \"off\"}) "
+                            "before provisioning", 409)
+                return
+            body = self._read_json()
+            ssid = body.get("ssid", "")
+            password = body.get("password", "")
+            node_ids = body.get("nodes")
+            if node_ids is not None and not isinstance(node_ids, list):
+                self._error("bad nodes: expected a list of node ids",
+                            400)
+                return
+            try:
+                self._json(network_api.provision_nodes(
+                    str(ssid), str(password),
+                    node_ids=([str(n) for n in node_ids]
+                              if node_ids is not None else None)))
+            except ValueError as exc:
+                self._error(str(exc), 400)
+            except RuntimeError as exc:
+                self._error(str(exc), 409)
+        elif path == "/api/v1/dual/start":
+            try:
+                self._json(dual_start())
+            except RuntimeError as exc:
+                self._error(str(exc), 409)
+        elif path == "/api/v1/dual/stop":
+            self._json(dual_stop())
         else:
             self._error("not found", 404)
 
@@ -648,6 +781,12 @@ class ConsoleHandler(BaseHTTPRequestHandler):
         elif cmd == "stream:stop":
             ws_codec.send_text(sock, json.dumps(STATE.stop_stream()))
         elif cmd == "set_source":
+            if str(msg.get("mode", "")) == "live" and DUAL is not None:
+                ws_codec.send_text(sock, json.dumps(
+                    {"error": "stop the dual session first "
+                              "(POST /api/v1/dual/stop) "
+                              "before selecting a live source"}))
+                return
             try:
                 result = STATE.set_source(str(msg.get("mode", "")))
             except (sources.LiveUnavailable, contracts.ContractError,

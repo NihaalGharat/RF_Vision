@@ -278,5 +278,196 @@ class ConsoleServerTests(unittest.TestCase):
         self.assertEqual(code, 426)
 
 
+_STUB_DUAL_STATS = {
+    "nodes": ("esp32-a", "esp32-b"),
+    "elapsed_s": 3.0,
+    "per_node": {
+        "esp32-a": {
+            "board_mac": "b0:3f:d3:70:20:3c",
+            "port": "/dev/ttyUSB1",
+            "source_state": "LIVE_VERIFIED",
+            "stream": {"rate_hz": 93.3, "valid": 100,
+                       "valid_pct": 100.0, "malformed": 0,
+                       "duplicates": 0, "out_of_order": 0,
+                       "gaps": 0},
+            "signal": {"rssi_last": -54, "channel": 1,
+                       "bssid": "8c:53:c3:5b:e1:59",
+                       "tones": 62},
+            "timing": {"host_pipeline_us_mean": 120.0,
+                       "esp_to_host_latency_us": None},
+            "sync": {"ready": True, "offset_ns": 1000.0,
+                     "jitter_ns": 500.0, "observations": 64}},
+        "esp32-b": {
+            "board_mac": "04:b2:47:20:1a:dc",
+            "port": "/dev/ttyUSB0",
+            "source_state": "LIVE_VERIFIED",
+            "stream": {"rate_hz": 75.0, "valid": 90,
+                       "valid_pct": 100.0, "malformed": 0,
+                       "duplicates": 0, "out_of_order": 0,
+                       "gaps": 0},
+            "signal": {"rssi_last": -57, "channel": 1,
+                       "bssid": "8c:53:c3:5b:e1:59",
+                       "tones": 62},
+            "timing": {"host_pipeline_us_mean": 130.0,
+                       "esp_to_host_latency_us": None},
+            "sync": {"ready": True, "offset_ns": 2000.0,
+                     "jitter_ns": 600.0, "observations": 64}}},
+    "sync": {"state": "SYNCED"},
+}
+
+
+class StubDualSession:
+    """Test seam for the dual lifecycle (no hardware, no threads)."""
+
+    instances = []
+
+    def __init__(self, **kwargs):
+        self.kwargs = kwargs
+        self.node_ids = ("esp32-a", "esp32-b")
+        self.expected_bssid = kwargs.get("expected_bssid",
+                                         "8c:53:c3:5b:e1:59")
+        self.expected_channel = kwargs.get("expected_channel", 1)
+        self.stopped = False
+        StubDualSession.instances.append(self)
+
+    def start(self):
+        return {"esp32-a": "/dev/ttyUSB1",
+                "esp32-b": "/dev/ttyUSB0"}
+
+    def stop(self):
+        self.stopped = True
+
+    def session_stats(self):
+        return _STUB_DUAL_STATS
+
+
+class FailingDualSession(StubDualSession):
+    """start() fails fast (no resolved device), like missing hardware."""
+
+    def start(self):
+        raise ValueError("node esp32-a has no resolved device")
+
+
+class DualSessionRouteTests(unittest.TestCase):
+    """Dual lifecycle via HTTP: start/stop, guards, cleanup."""
+
+    @classmethod
+    def setUpClass(cls):
+        cls.state = console.ConsoleState()
+        cls._orig_state = console.STATE
+        console.STATE = cls.state
+        cls._orig_factory = console._DUAL_SESSION_FACTORY
+        console._DUAL_SESSION_FACTORY = StubDualSession
+        cls.port = _free_port()
+        cls.server = console.build_server(cls.port)
+        cls.thread = threading.Thread(target=cls.server.serve_forever,
+                                      daemon=True)
+        cls.thread.start()
+        cls.base = f"http://127.0.0.1:{cls.port}"
+
+    @classmethod
+    def tearDownClass(cls):
+        cls.server.shutdown()
+        cls.thread.join(timeout=5)
+        console._DUAL_SESSION_FACTORY = cls._orig_factory
+        console.STATE = cls._orig_state
+        console.set_dual_session(None)
+
+    def setUp(self):
+        StubDualSession.instances = []
+        console.set_dual_session(None)
+        self.state.streaming = False
+
+    def tearDown(self):
+        console.set_dual_session(None)
+
+    # -- helpers ------------------------------------------------------
+    def get(self, path):
+        try:
+            with urllib.request.urlopen(self.base + path) as res:
+                return res.status, json.loads(res.read().decode("utf-8"))
+        except urllib.error.HTTPError as exc:
+            return exc.code, json.loads(exc.read().decode())
+
+    def post(self, path, body=None):
+        data = json.dumps(body or {}).encode()
+        req = urllib.request.Request(self.base + path, data=data,
+                                     headers={"Content-Type":
+                                              "application/json"})
+        try:
+            with urllib.request.urlopen(req) as res:
+                return res.status, json.loads(res.read().decode())
+        except urllib.error.HTTPError as exc:
+            return exc.code, json.loads(exc.read().decode())
+
+    # -- tests ----------------------------------------------------------
+    def test_dual_start_attaches_session(self):
+        code, data = self.post("/api/v1/dual/start")
+        self.assertEqual(code, 200)
+        self.assertTrue(data["running"])
+        self.assertEqual(data["nodes"], ["esp32-a", "esp32-b"])
+        self.assertEqual(data["devices"]["esp32-a"], "/dev/ttyUSB1")
+        self.assertEqual(data["devices"]["esp32-b"], "/dev/ttyUSB0")
+        self.assertIs(console.DUAL, StubDualSession.instances[-1])
+        code, nodes = self.get("/api/v1/nodes")
+        self.assertEqual(code, 200)
+        self.assertTrue(nodes["available"])
+        self.assertEqual(nodes["sync_state"], "SYNCED")
+        by_id = {n["node_id"]: n for n in nodes["nodes"]}
+        self.assertEqual(set(by_id), {"esp32-a", "esp32-b"})
+        # Real registry MACs flow through (never substituted).
+        self.assertEqual(by_id["esp32-a"]["board_mac"],
+                         "b0:3f:d3:70:20:3c")
+        self.assertEqual(by_id["esp32-b"]["board_mac"],
+                         "04:b2:47:20:1a:dc")
+
+    def test_dual_start_duplicate_refused(self):
+        self.post("/api/v1/dual/start")
+        code, data = self.post("/api/v1/dual/start")
+        self.assertEqual(code, 409)
+        self.assertIn("error", data)
+
+    def test_dual_stop_detaches_and_idempotent(self):
+        self.post("/api/v1/dual/start")
+        session = console.DUAL
+        code, data = self.post("/api/v1/dual/stop")
+        self.assertEqual(code, 200)
+        self.assertFalse(data["running"])
+        self.assertIsNone(console.DUAL)
+        self.assertTrue(session.stopped)
+        code, data = self.post("/api/v1/dual/stop")
+        self.assertEqual(code, 200)
+        self.assertFalse(data["running"])
+
+    def test_dual_start_refused_while_streaming(self):
+        self.state.streaming = True
+        try:
+            code, _ = self.post("/api/v1/dual/start")
+        finally:
+            self.state.streaming = False
+        self.assertEqual(code, 409)
+        self.assertIsNone(console.DUAL)
+
+    def test_dual_start_missing_board_leaves_nothing_attached(self):
+        console._DUAL_SESSION_FACTORY = FailingDualSession
+        try:
+            code, _ = self.post("/api/v1/dual/start")
+        finally:
+            console._DUAL_SESSION_FACTORY = StubDualSession
+        self.assertEqual(code, 409)
+        self.assertIsNone(console.DUAL)
+
+    def test_provision_refused_while_dual_runs(self):
+        self.post("/api/v1/dual/start")
+        code, _ = self.post("/api/v1/network/provision",
+                            {"ssid": "x", "password": "y"})
+        self.assertEqual(code, 409)
+
+    def test_live_source_refused_while_dual_runs(self):
+        self.post("/api/v1/dual/start")
+        code, _ = self.post("/api/v1/source", {"mode": "live"})
+        self.assertEqual(code, 409)
+
+
 if __name__ == "__main__":
     unittest.main()
