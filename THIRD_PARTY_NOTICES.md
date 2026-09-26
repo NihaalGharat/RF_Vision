@@ -104,3 +104,17 @@ copyright notices.
   assets, firmware, or backend code included.
 - License text: MIT (upstream `LICENSE`; obligations: retain
   `Copyright (c) 2024 rUv` notice — recorded here).
+
+## 6. Meta React 18.3.1 — MIT License
+
+- Repository: https://github.com/facebook/react
+- Owner: Facebook, Inc. and its affiliates — Copyright (c) Facebook, Inc.
+  and its affiliates
+- Version: `18.3.1` (UMD production builds, fetched from unpkg)
+- In RF Vision: `web/static/react/vendor/react.production.min.js`,
+  `web/static/react/vendor/react-dom.production.min.js` (verbatim,
+  unmodified; serve the Phase-1 React console with no build step and no
+  CDN at runtime — see `web/static/react/vendor/ATTRIBUTION.md`)
+- Modifications: none to vendored files.
+- License text: MIT (license header preserved at the top of each vendored
+  file; obligations: retain copyright notice — recorded here).

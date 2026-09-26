@@ -63,3 +63,10 @@ see `dsp/README.md`).
 ## D. thkimKETI/csi-sensing @ 898f7f33 — NO CODE
 
 Nothing copied. Study notes: `docs/third_party/CSI_SENSING_STUDY_NOTES.md`.
+
+## E. Meta React @ 18.3.1 (MIT)
+
+| Upstream path | RF Vision destination | Modifications |
+|---|---|---|
+| `react@18.3.1/umd/react.production.min.js` (unpkg) | `web/static/react/vendor/react.production.min.js` | verbatim |
+| `react-dom@18.3.1/umd/react-dom.production.min.js` (unpkg) | `web/static/react/vendor/react-dom.production.min.js` | verbatim |

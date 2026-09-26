@@ -14,6 +14,8 @@ const FETCHERS = {
   live: () => api.live(),
   nodes: () => api.nodes(),
   streamStatus: () => api.streamStatus(),
+  network: () => api.network(),
+  rfReadiness: () => api.rfReadiness(),
 };
 
 const CADENCE_MS = 2000;

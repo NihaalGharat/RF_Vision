@@ -247,6 +247,14 @@ button.btn:hover:not(:disabled), select.btn:hover:not(:disabled) { border-color:
    instant reads as faster and more instrument-like. Press/focus/hover
    feedback above is retained. No entry animations anywhere. */
 button.btn:disabled, select.btn:disabled { opacity: 0.45; cursor: not-allowed; }
+input.input {
+  background: var(--bg-3); color: var(--ink-0); border: 1px solid var(--line);
+  border-radius: var(--radius-s); padding: 7px 10px; font: inherit; font-size: 13px;
+  min-height: 44px;
+}
+input.input:focus-visible {
+  outline: 2px solid var(--accent); outline-offset: 1px;
+}
 button.btn:focus-visible, select.btn:focus-visible, .tab:focus-visible {
   outline: 2px solid var(--accent); outline-offset: 1px;
 }

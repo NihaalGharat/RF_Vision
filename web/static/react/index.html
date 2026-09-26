@@ -1,0 +1,33 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>RF Vision — React Console</title>
+<link rel="stylesheet" href="/static/css/tokens.css">
+<link rel="stylesheet" href="/static/react/css/react.css">
+<script src="/static/react/vendor/react.production.min.js"></script>
+<script src="/static/react/vendor/react-dom.production.min.js"></script>
+<script type="importmap">
+{"imports": {
+  "three": "/static/vendor/three.module.js",
+  "three/addons/": "/static/vendor/"
+}}
+</script>
+</head>
+<body>
+<noscript>RF Vision React console requires JavaScript. The legacy console remains at <a href="/">/</a>.</noscript>
+<div id="react-root"></div>
+<div id="react-boot-error" class="boot-error" hidden></div>
+<script>
+(function () {
+  if (!window.React || !window.ReactDOM) {
+    var el = document.getElementById("react-boot-error");
+    el.hidden = false;
+    el.textContent = "BOOT FAILURE — vendored React did not load. Legacy console unaffected at /";
+  }
+})();
+</script>
+<script type="module" src="/static/react/js/app.js"></script>
+</body>
+</html>
