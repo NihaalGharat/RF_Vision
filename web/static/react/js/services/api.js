@@ -54,6 +54,8 @@ export const api = {
   rfReadiness: () => get("/api/v1/rf_readiness"),
   nodes: () => get("/api/v1/nodes"),
   live: () => get("/api/v1/live"),
+  // RF Vision pipeline (dual only; engineering/demonstration state)
+  vision: () => get("/api/v1/vision"),
   // Research
   experiment: () => get("/api/v1/experiment"),
   recordStart: (maxSeconds) => post("/api/v1/live/record/start", { max_seconds: maxSeconds }),

@@ -73,10 +73,17 @@ class ConsoleServerTests(unittest.TestCase):
 
     # -- tests ----------------------------------------------------------
     def test_index_and_static(self):
+        # "/" lands on the React dashboard (demo-launch convenience);
+        # legacy UI preserved at /legacy and /index.html.
         with urllib.request.urlopen(self.base + "/") as res:
             html = res.read().decode()
-        self.assertIn("RF VISION", html)
-        self.assertIn("/static/js/app.js", html)
+        self.assertIn("RF Vision \u2014 React Console", html)
+        with urllib.request.urlopen(self.base + "/react") as res:
+            self.assertEqual(html, res.read().decode())
+        with urllib.request.urlopen(self.base + "/legacy") as res:
+            legacy = res.read().decode()
+        self.assertIn("RF VISION", legacy)
+        self.assertIn("/static/js/app.js", legacy)
         with urllib.request.urlopen(self.base + "/static/js/store.js") as res:
             self.assertIn("SourceStore", res.read().decode())
         with urllib.request.urlopen(self.base + "/static/vendor/three.module.js") as res:

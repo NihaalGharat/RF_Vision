@@ -40,13 +40,103 @@ from typing import Optional
 import numpy as np
 import pandas as pd
 
-from csi.parser.csi_parser import CsiSample
+from csi.parser.csi_parser import CsiSample, PacketError
+from csi.parser.esp_csv_adapter import EspCsvAdapter
 from config.settings import load_config, resolve_path, setup_logging
 from dsp.features.feature_extraction import FeatureConfig, FeatureExtractor
 from dsp.preprocessing.preprocessing import PreprocessConfig, Preprocessor
-from csi.capture.serial_receiver import SerialReceiver
+from web.live_serial import SerialLineSource
 
 LOG = logging.getLogger("wifi_sensing.collector")
+
+
+class _CsvLiveReceiver:
+    """Minimal live pump over the validated CSV acquisition path.
+
+    The current firmware emits ``CSI_DATA`` CSV lines, which
+    :class:`SerialReceiver` (``#CSI `` JSON protocol) does not speak.
+    This shim reuses the validated :class:`SerialLineSource` transport +
+    :class:`EspCsvAdapter` parser — the same path live inference reads —
+    and presents the ``packets`` / ``malformed`` / ``io_errors`` /
+    ``stop()`` / ``join()`` surface :meth:`SessionCollector.run` needs.
+    Raw lines are stored losslessly to ``record_path``.
+    """
+
+    def __init__(self, port: str, baud: int, callback, record_path) -> None:
+        self._source = SerialLineSource(port=port, baud=baud)
+        self._adapter = EspCsvAdapter()
+        self._callback = callback
+        self._record_path = Path(record_path)
+        self.packets = 0
+        self.malformed = 0
+        self.io_errors = 0
+        self._stop = False
+        self._thread = None
+        self._raw_fh = None
+
+    def start(self) -> None:
+        import threading
+        self._source.open()
+        self._record_path.parent.mkdir(parents=True, exist_ok=True)
+        self._raw_fh = self._record_path.open("w", encoding="utf-8")
+        self._thread = threading.Thread(target=self._pump, daemon=True,
+                                        name="collector-pump")
+        self._thread.start()
+
+    def _pump(self) -> None:
+        try:
+            for line in self._source.iter_lines():
+                if self._stop:
+                    break
+                text = line if isinstance(line, str) else str(line)
+                if "CSI_DATA" in text and self._raw_fh is not None:
+                    try:
+                        self._raw_fh.write(text if text.endswith("\n")
+                                           else text + "\n")
+                    except OSError:
+                        pass
+                try:
+                    sample = self._adapter.handle_line(
+                        text, time.time(), time.monotonic_ns())
+                except PacketError:
+                    self.malformed += 1
+                    continue
+                except Exception:
+                    self.malformed += 1
+                    continue
+                if sample is None:
+                    continue
+                self.packets += 1
+                try:
+                    self._callback(sample)
+                except Exception:
+                    LOG.debug("sample callback failed", exc_info=True)
+        except Exception as exc:
+            if not self._stop:
+                self.io_errors += 1
+                LOG.warning("collector serial problem: %s", exc)
+        finally:
+            try:
+                self._source.close()
+            except Exception:
+                pass
+            try:
+                if self._raw_fh is not None:
+                    self._raw_fh.close()
+            except Exception:
+                pass
+
+    def stop(self) -> None:
+        self._stop = True
+        try:
+            self._source.close()
+        except Exception:
+            pass
+
+    def join(self, timeout: float = 5.0) -> None:
+        thread, self._thread = self._thread, None
+        if thread is not None:
+            thread.join(timeout=timeout)
 
 DATASET_META = ("sample_id", "session_id", "timestamp")
 DATASET_LABELS = ("presence", "movement", "position")
@@ -111,7 +201,7 @@ class SessionCollector:
                 "ht_only": self.preproc_cfg.ht_only,
                 "drop_rx_state_errors": self.preproc_cfg.drop_rx_state_errors,
                 "drop_first_word_invalid":
-                    self.preproc_cfg.drop_first_word_invalid,
+                    self.preproc_cfg.trim_first_word_invalid,
             },
         }
         if path.exists():
@@ -170,8 +260,8 @@ class SessionCollector:
     def run(self, duration: float, port: str, baud: int) -> int:
         """Record for ``duration`` seconds with a progress display."""
         self.ensure_feature_config()
-        receiver = SerialReceiver(port, baud, callback=self.on_sample,
-                                  record_path=self.raw_path)
+        receiver = _CsvLiveReceiver(port, baud, callback=self.on_sample,
+                                    record_path=self.raw_path)
         receiver.start()
         print(f"\nSession '{self.session_id}': label={self.label}"
               + (f" position={self.position}" if self.position is not None
@@ -226,9 +316,21 @@ def main(argv=None) -> int:
     parser.add_argument("--port", default=None, help="serial port override")
     parser.add_argument("--baud", type=int, default=None)
     parser.add_argument("--config", default=None, help="config.yaml path")
+    parser.add_argument("--accept-rx-errors", action="store_true",
+                        help="engineering only: accept firmware rx_state!=0 "
+                             "frames in preprocessing (default drops them). "
+                             "Measured on 2026-09-27: rx_state==1 amplitudes "
+                             "match rx_state==0 (20.41+-1.39 vs 20.30+-0.88, "
+                             "n=2991/10). Never use for controlled research "
+                             "collection; the RFVISION-011 path keeps the "
+                             "default drop.")
     args = parser.parse_args(argv)
 
     cfg = load_config(args.config)
+    if args.accept_rx_errors:
+        cfg = dict(cfg)
+        cfg["csi"] = dict(cfg.get("csi", {}))
+        cfg["csi"]["drop_rx_state_errors"] = False
     setup_logging(cfg)
 
     if args.label == "person":

@@ -16,7 +16,7 @@ import { Card, ModePill, PageHeader } from "../components/global.js";
 import { SafeButton } from "../components/controls.js";
 import { api } from "../services/api.js";
 import { frameFreshness } from "../services/sources.js";
-import { sourceStore, sensingStore, vizStore, useStore } from "../state/store.js";
+import { sourceStore, sensingStore, vizStore, visionStore, useStore } from "../state/store.js";
 // Validated spatial renderers, shared with the legacy console. Absolute-path
 // import keeps one implementation; the three.js specifier resolves via the
 // importmap in web/static/react/index.html (local r160, no new dependency).
@@ -45,15 +45,47 @@ function hudExtra(live) {
 
 // Same presence rule as legacy: backend presence_state rides the HUD as an
 // RF-inferred, uncalibrated observation — never a body, mesh, or claim.
-function presenceLabel(p) {
-  return (p && p.presence_state && p.presence_state !== "UNKNOWN")
+// The vision pipeline aggregate (evidence + zone) rides alongside when
+// attached; UNKNOWN/absent pipeline contributes nothing.
+function presenceLabel(p, vision) {
+  const base = (p && p.presence_state && p.presence_state !== "UNKNOWN")
     ? `${p.presence_state} (RF-INFERRED, UNCALIBRATED)` : "";
+  if (!vision || !vision.evidence || vision.evidence === "UNKNOWN") return base;
+  const zone = vision.spatial && vision.spatial.zone
+    ? ` · zone ${vision.spatial.zone} (${vision.spatial.level})` : "";
+  const extra = `${vision.evidence}${zone}`;
+  return base ? `${base} · ${extra}` : `${extra} (RF-INFERRED, UNCALIBRATED)`;
+}
+
+// RF Vision pipeline rows: evidence + per-node state + ML + tracks +
+// spatial + XAI. Every value is backend-provided; absent pipeline renders
+// as explicitly unavailable (never synthesized).
+function visionRows(vision, visionError) {
+  if (visionError && !vision) return [["pipeline", `unavailable (${visionError})`]];
+  if (!vision) return [["pipeline", "not attached (start the dual session)"]];
+  const nodes = (vision.nodes || []).map((n) =>
+    `${n.node_id}: ${n.stale ? "STALE" : `${n.presence_label}/${n.movement_label}`}`);
+  const tracks = (vision.tracks || []).map((t) => `${t.id} (${t.state})`);
+  const ml = vision.ml || {};
+  const spatial = vision.spatial || {};
+  const xai = vision.xai || {};
+  return [
+    ["evidence", vision.evidence || "UNKNOWN"],
+    ["nodes", nodes.length ? nodes.join(" · ") : "none"],
+    ["ML", `${ml.model_name || "none"} · ${ml.model_status || "UNAVAILABLE"}`],
+    ["tracks", tracks.length ? tracks.join(", ") : "[] (no evidence-held track)"],
+    ["spatial", `${spatial.level || "?"}${spatial.zone ? ` · ${spatial.zone}` : ""}`],
+    ["XAI", xai.status || "XAI UNAVAILABLE"],
+    ["provenance", `${vision.provenance || "?"} · ${vision.calibration || "UNCALIBRATED"}`],
+  ];
 }
 
 export function VisualizeView() {
   const source = useStore(sourceStore);
   const sensing = useStore(sensingStore);
   const viz = useStore(vizStore);
+  const visionState = useStore(visionStore);
+  const vision = visionState.vision || null;
   const [widthM, setWidthM] = R.useState(null);
   const [sceneFailed, setSceneFailed] = R.useState(null);
 
@@ -77,7 +109,7 @@ export function VisualizeView() {
     const w = widthM;
     const amplitudes = amps.current;
     const positionT = pos.current;
-    const showState = presenceLabel(p);
+    const showState = presenceLabel(p, vision);
     const hud = [hudExtra(L), showState].filter(Boolean).join(" · ") || null;
     const room = roomCanvas.current;
     if (room) {
@@ -183,7 +215,7 @@ export function VisualizeView() {
   }, [viz.viewToken]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const posShow = pos.current;
-  const showState = presenceLabel(p);
+  const showState = presenceLabel(p, vision);
 
   return h("div", null,
     h(PageHeader, {
@@ -229,6 +261,13 @@ export function VisualizeView() {
           ),
           h("p", { className: "rfreact-note" },
             "Visualization controls are fenced off from hardware controls by route: nothing on this screen can provision, start, or stop anything physical.")),
+        h(Card, { label: "RF Vision", title: "RF Vision pipeline (dual only, engineering)" },
+          kv(visionRows(vision, visionState.visionError)),
+          vision && vision.xai && vision.xai.statement
+            ? h("p", { className: "rfreact-note" }, `Why: ${vision.xai.statement}`)
+            : null,
+          h("p", { className: "rfreact-note" },
+            "Engineering/demonstration state. UNCALIBRATED, NOT VALIDATED. No identity, no bodies, no calibrated probability.")),
         h(Card, { label: "Scene", title: "3D RF environment — one link (three.js r160, local)" },
           sceneFailed
             ? h("p", { className: "rfreact-note" }, `3D unavailable (${sceneFailed}). 2D view remains.`)

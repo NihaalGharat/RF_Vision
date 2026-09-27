@@ -10,7 +10,7 @@ import { WsService } from "./services/websocket.js";
 import { sourceFromMode } from "./services/sources.js";
 import {
   systemStore, sourceStore, hardwareStore, sensingStore,
-  researchStore, useStore,
+  researchStore, visionStore, useStore,
 } from "./state/store.js";
 import { ConnDot, Icon, ThemeToggle, Clock } from "./components/global.js";import { LiveView } from "./features/live.js";
 import { VisualizeView } from "./features/visualize.js";
@@ -51,6 +51,9 @@ async function refreshAll() {
     status: api.status().then(
       (d) => sensingStore.set({ status: d }),
       () => {}),
+    vision: api.vision().then(
+      (d) => visionStore.set({ vision: d && d.available ? d.vision : null, visionError: null }),
+      (e) => visionStore.set({ visionError: String(e.message || e) })),
   };
   await Promise.allSettled(Object.values(jobs));
 }

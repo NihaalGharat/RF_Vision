@@ -42,6 +42,7 @@ __all__ = [
     "SHOWCASE_PROVENANCE",
     "node_status_payload",
     "nodes_payload",
+    "vision_payload",
     "validate_envelope",
 ]
 
@@ -434,6 +435,43 @@ def nodes_payload(*, available: bool, session: Optional[Dict[str, Any]],
         "sync_state": sync_state,
         "nodes": list(nodes or []),
         "session": session,
+        "reason": reason,
+    }
+
+
+def vision_payload(*, available: bool,
+                   vision: Optional[Dict[str, Any]] = None,
+                   reason: Optional[str] = None) -> Dict[str, Any]:
+    """GET /api/v1/vision — RF Vision pipeline state (additive).
+
+    Engineering/demonstration state only, never controlled research
+    evidence. ``vision`` is the pipeline snapshot dict (validated
+    lightly: evidence/spatial/xai tokens); ``available=False`` when no
+    dual vision pipeline is attached.
+    """
+    if vision is not None:
+        evidence = vision.get("evidence")
+        if evidence not in ("EMPTY", "RF_ACTIVITY", "POSSIBLE_PRESENCE",
+                            "UNKNOWN"):
+            raise ContractError(f"bad vision evidence: {evidence!r}")
+        spatial = vision.get("spatial") or {}
+        if spatial.get("level") not in ("LOCALIZED", "RF ESTIMATE",
+                                        "RF ACTIVITY"):
+            raise ContractError(
+                f"bad vision spatial level: {spatial.get('level')!r}")
+        if spatial.get("level") == "LOCALIZED":
+            raise ContractError(
+                "LOCALIZED requires spatial calibration (none exists)")
+        xai = vision.get("xai") or {}
+        if xai.get("status") not in ("AVAILABLE", "XAI UNAVAILABLE"):
+            raise ContractError(
+                f"bad vision xai status: {xai.get('status')!r}")
+        for track in vision.get("tracks") or []:
+            if not isinstance(track, dict) or "id" not in track:
+                raise ContractError("vision tracks must carry an id")
+    return {
+        "available": bool(available),
+        "vision": vision,
         "reason": reason,
     }
 

@@ -48,6 +48,10 @@ export const sensingStore = createStore({
   live: null, liveError: null, status: null,
   frameCount: 0,
 });
+// RF Vision pipeline: evidence + ML + tracks + spatial + XAI (dual only).
+export const visionStore = createStore({
+  vision: null, visionError: null,
+});
 // Session / protocol / validation / analysis / provenance.
 export const researchStore = createStore({
   experiment: null, experimentError: null,

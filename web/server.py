@@ -5,7 +5,8 @@ RF Vision native, stdlib only (``http.server`` + ``threading`` + the
 ``web/static/`` plus a versioned JSON API and a WebSocket event stream.
 
 Endpoints (all JSON unless noted):
-- ``GET /`` → ``web/static/index.html`` (static files under ``/static/``)
+- ``GET /`` → ``web/static/react/index.html`` (React dashboard;
+  legacy UI at ``/legacy``; static files under ``/static/``)
 - ``GET /api/v1/health`` — liveness + contract + provenance
 - ``GET /api/v1/status`` — ``system.status`` payload (+staleness)
 - ``GET /api/v1/sensing/latest`` — latest ``sensing.snapshot`` envelope
@@ -15,6 +16,9 @@ Endpoints (all JSON unless noted):
 - ``POST /api/v1/source {"mode": off|fixture|simulated|live}``
 - ``GET /api/v1/live`` — live session telemetry (or available:false)
 - ``GET /api/v1/nodes`` — two-node telemetry (or available:false, contract v2)
+- ``GET /api/v1/vision`` — RF Vision pipeline state: deterministic
+  evidence + ML + tracks + spatial + XAI (or available:false; dual only,
+  engineering/demonstration, never research evidence)
 - ``POST /api/v1/dual/start|stop`` — backend DualNodeSession lifecycle
   (both nodes required; refuses while the single live source runs, and
   provisioning / live-source selection refuse while dual runs)
@@ -308,11 +312,99 @@ STATE = ConsoleState()
 #: Set via :func:`set_dual_session`; read by GET /api/v1/nodes.
 DUAL = None
 
+#: Attached RF Vision pipeline (None = no dual vision active). Built
+#: best-effort in :func:`dual_start` from the existing sample seam; any
+#: failure degrades to vision-unavailable with acquisition untouched.
+#: Read by GET /api/v1/vision.
+VISION = None
+
 #: Serializes dual-session check-and-set (duplicate-start prevention).
 _dual_lock = threading.Lock()
 
 #: Session constructor (seam for focused tests; production = DualNodeSession).
 _DUAL_SESSION_FACTORY = DualNodeSession
+
+#: Forwarder draining attached dual-session frames to WS subscribers
+#: (None = no dual broadcast active). Read-only fan-out: envelopes pass
+#: through unchanged to the existing WS broadcast; acquisition, sync,
+#: gates, and contracts are untouched.
+_dual_forward: Optional[threading.Thread] = None
+
+
+def _dual_broadcast_loop(session) -> None:
+    """Forward live dual sensing.snapshot envelopes to WS subscribers.
+
+    Existing dual queue -> existing WS subscriber list. Envelopes pass
+    through byte-identical (node_id already tagged by the session pump).
+    Backlog queued before any consumer existed is dropped via envelope
+    ts so the visualization shows live RF evidence, never replay.
+    Exits when the session stops (or is detached).
+    """
+    started = time.time()
+    try:
+        for _node_id, event in session.frames():
+            if DUAL is not session or not isinstance(event, dict):
+                break
+            if event.get("type") != "sensing.snapshot":
+                continue
+            try:
+                ts = float(event.get("ts", 0.0))
+            except (TypeError, ValueError):
+                ts = 0.0
+            if ts < started:
+                continue  # pre-consumer backlog: drop, never replay
+            text = json.dumps(event)
+            with STATE.lock:
+                STATE.packets += 1
+                STATE.last_frame_ts = time.time()
+                STATE.last_seq = event.get("seq")
+                targets = list(STATE.subscribers)
+            dead = []
+            for sock in targets:
+                try:
+                    ws_codec.send_text(sock, text)
+                except Exception:
+                    dead.append(sock)
+            if dead:
+                with STATE.lock:
+                    STATE.subscribers = [s for s in STATE.subscribers
+                                         if s not in dead]
+    except Exception:
+        pass
+
+
+def _attach_vision(session) -> None:
+    """Attach the RF Vision pipeline to a started dual session.
+
+    Best-effort composition: per-node engines tap the existing
+    ``sample_observer`` seam AFTER all acquisition bookkeeping. Any
+    failure (missing deps, no model artifacts, unexpected error) leaves
+    ``VISION`` as None — acquisition, sync, gates, and the WS fan-out
+    are unaffected.
+    """
+    global VISION
+    try:
+        from web.vision import VisionPipeline
+        pipeline = VisionPipeline(node_ids=tuple(session.node_ids))
+        for nid, provider in session.providers.items():
+            try:
+                provider._sample_observer = pipeline.observer(nid)
+            except Exception:
+                pass
+        VISION = pipeline
+    except Exception:
+        VISION = None
+
+
+def _detach_vision() -> None:
+    """Forget vision runtime state (dual stop)."""
+    global VISION
+    pipeline, VISION = VISION, None
+    if pipeline is not None:
+        try:
+            pipeline.reset()
+        except Exception:
+            pass
 
 
 def set_dual_session(session) -> None:
@@ -362,6 +454,12 @@ def dual_start() -> Dict[str, Any]:
                 pass
             raise
         set_dual_session(session)
+        global _dual_forward
+        _dual_forward = threading.Thread(
+            target=_dual_broadcast_loop, args=(session,),
+            daemon=True, name="dual-ws-forward")
+        _dual_forward.start()
+        _attach_vision(session)
         return {"running": True, "nodes": list(session.node_ids),
                 "devices": devices,
                 "expected": {"bssid": session.expected_bssid,
@@ -381,6 +479,12 @@ def dual_stop() -> Dict[str, Any]:
             session.stop()
         finally:
             set_dual_session(None)
+            _detach_vision()
+            global _dual_forward
+            forward, _dual_forward = _dual_forward, None
+        if forward is not None and forward.is_alive():
+            # Session stop ends frames(); join only the exited forwarder.
+            forward.join(timeout=5.0)
         return {"running": False,
                 "reason": "dual session stopped; ports released"}
 
@@ -474,11 +578,12 @@ class ConsoleHandler(BaseHTTPRequestHandler):
         path = urlparse(self.path).path
         if path == "/ws/sensing":
             self._handle_ws()
-        elif path in ("/", "/index.html"):
-            self._static("index.html")
-        elif path == "/react":
-            # Phase-1 React console shell (coexists with the legacy UI at /).
+        elif path in ("/", "/react"):
+            # React dashboard is the default landing page (demo-launch
+            # convenience). Legacy UI preserved at /legacy and /index.html.
             self._static("react/index.html")
+        elif path in ("/legacy", "/index.html"):
+            self._static("index.html")
         elif path.startswith("/static/"):
             self._static(path[len("/static/"):])
         elif path == "/api/v1/health":
@@ -584,6 +689,21 @@ class ConsoleHandler(BaseHTTPRequestHandler):
             self._json(contracts.xai_payload(available=False))
         elif path == "/api/v1/nodes":
             self._json(dual_status_payload())
+        elif path == "/api/v1/vision":
+            pipeline = VISION
+            if pipeline is None:
+                self._json(contracts.vision_payload(
+                    available=False,
+                    reason="no dual vision pipeline attached "
+                           "(POST /api/v1/dual/start first)"))
+            else:
+                try:
+                    self._json(contracts.vision_payload(
+                        available=True, vision=pipeline.snapshot()))
+                except Exception as exc:
+                    self._json(contracts.vision_payload(
+                        available=False,
+                        reason=f"vision snapshot failed: {exc}"))
         elif path == "/api/v1/network":
             self._json(network_api.network_status_payload())
         elif path == "/api/v1/rf_readiness":
