@@ -17,6 +17,7 @@
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include "freertos/event_groups.h"
+#include "freertos/semphr.h"
 
 #include "nvs_flash.h"
 #include "nvs.h"
@@ -58,8 +59,9 @@ static const char *TAG = "csi_recv_router";
  * Replaces the permanent build-time credential assumption with NVS-backed
  * runtime credentials set over the existing USB-serial link. Validated
  * acquisition behavior (CSI format/filter, 100 Hz gateway ping) is
- * untouched: when no runtime credentials are stored, boot executes the
- * original path (example_connect -> wifi_csi_init -> ping) identically.
+ * untouched: when no runtime credentials are stored, boot starts the
+ * non-blocking Kconfig attempt, observes association/IP, then initializes
+ * CSI and ping exactly once.
  *
  * Host protocol (host side: csi/transport/provisioning.py):
  *   Host -> RFV_PROV_BEGIN / RFV_SSID:<s> / RFV_PASS:<p> /
@@ -71,10 +73,13 @@ static const char *TAG = "csi_recv_router";
  */
 #define RFV_NVS_NAMESPACE "rfvision"
 #define RFV_PROV_LINE_LEN 160
+#define RFV_COMMIT_JOIN_TIMEOUT_MS 10000
+#define RFV_COMMIT_JOIN_ATTEMPTS 1
 
 /* Forward declarations (defined below; unchanged validated functions). */
-static void wifi_csi_init(void);
+static esp_err_t wifi_csi_init(void);
 static esp_err_t wifi_ping_router_start(void);
+static esp_err_t rfv_network_up_once(void);
 
 static char s_staged_ssid[33] = {0};
 static char s_staged_pass[65] = {0};
@@ -86,6 +91,62 @@ static bool s_staged_has_ssid = false;
  * dropped host can never silence the node permanently. */
 static volatile bool s_rfv_quiet = false;
 static TickType_t s_rfv_quiet_until = 0;
+
+/* One owner for every application-controlled Wi-Fi transition and for
+ * CSI/ping initialization. Created before the parser task. */
+static SemaphoreHandle_t s_net_lock = NULL;
+
+/* COMMIT takes temporary Wi-Fi ownership before waiting for s_net_lock.
+ * Boot polls this state between steps; failed COMMIT returns ownership. */
+typedef enum {
+    RFV_BOOT_ACTIVE = 0,
+    RFV_COMMIT_ACTIVE,
+    RFV_COMMIT_COMPLETE,
+} rfv_boot_state_t;
+
+static portMUX_TYPE s_boot_state_mux = portMUX_INITIALIZER_UNLOCKED;
+static rfv_boot_state_t s_boot_state = RFV_BOOT_ACTIVE;
+
+/* CSI and ping become possible at different points (association vs usable
+ * IP/gateway), so their initialization is tracked separately. Both fields
+ * are protected by s_net_lock. */
+static bool s_net_csi_ready = false;
+static bool s_net_ping_ready = false;
+
+static rfv_boot_state_t rfv_get_boot_state(void)
+{
+    taskENTER_CRITICAL(&s_boot_state_mux);
+    rfv_boot_state_t state = s_boot_state;
+    taskEXIT_CRITICAL(&s_boot_state_mux);
+    return state;
+}
+
+static void rfv_set_boot_state(rfv_boot_state_t state)
+{
+    taskENTER_CRITICAL(&s_boot_state_mux);
+    s_boot_state = state;
+    taskEXIT_CRITICAL(&s_boot_state_mux);
+}
+
+static bool rfv_boot_preempted(void)
+{
+    return rfv_get_boot_state() != RFV_BOOT_ACTIVE;
+}
+
+static void rfv_request_boot_preemption(void)
+{
+    rfv_set_boot_state(RFV_COMMIT_ACTIVE);
+}
+
+static void rfv_finish_boot_preemption(bool success)
+{
+    rfv_set_boot_state(success ? RFV_COMMIT_COMPLETE : RFV_BOOT_ACTIVE);
+}
+
+static bool rfv_boot_cancelled(bool cancelable)
+{
+    return cancelable && rfv_boot_preempted();
+}
 
 static bool rfv_load_runtime_creds(char *ssid_out, char *pass_out)
 {
@@ -138,48 +199,62 @@ static void rfv_emit_net_status(void)
                IP2STR(&ip.ip));
 }
 
-static bool rfv_wait_for_ip(uint32_t timeout_ms)
+static esp_err_t rfv_wait_for_ip(uint32_t timeout_ms, bool cancelable)
 {
     esp_netif_ip_info_t ip = {0};
     uint32_t waited = 0;
     while (waited < timeout_ms) {
+        if (rfv_boot_cancelled(cancelable)) {
+            return ESP_ERR_INVALID_STATE;
+        }
         esp_netif_get_ip_info(esp_netif_get_handle_from_ifkey("WIFI_STA_DEF"), &ip);
         if (ip.ip.addr != 0) {
-            return true;
+            return ESP_OK;
         }
         vTaskDelay(pdMS_TO_TICKS(200));
         waited += 200;
     }
-    return false;
+    return ESP_ERR_TIMEOUT;
+}
+
+/* Association gate for post-join CSI startup (mirrors the checks in
+ * rfv_emit_net_status; never aborts — returns false when down). */
+static bool rfv_is_associated(void)
+{
+    wifi_ap_record_t ap = {0};
+    esp_netif_ip_info_t ip = {0};
+    if (esp_wifi_sta_get_ap_info(&ap) != ESP_OK) {
+        return false;
+    }
+    esp_netif_get_ip_info(esp_netif_get_handle_from_ifkey("WIFI_STA_DEF"), &ip);
+    return ip.ip.addr != 0;
 }
 
 static esp_err_t rfv_wifi_reconnect(const char *ssid, const char *pass); /* below */
-static void rfv_clear_runtime_creds(void)
-{
-    nvs_handle_t handle = 0;
-    if (nvs_open(RFV_NVS_NAMESPACE, NVS_READWRITE, &handle) != ESP_OK) {
-        return;
-    }
-    nvs_erase_key(handle, "ssid");
-    nvs_erase_key(handle, "pass");
-    nvs_commit(handle);
-    nvs_close(handle);
-}
 
 /* Join an AP, absorbing races with the example_connect retry handler
  * (it may call esp_wifi_connect() concurrently -> ESP_ERR_WIFI_STATE).
- * Returns ESP_OK only when an IP is actually bound. */
+ * Returns ESP_OK only when an IP is actually bound. Cancelable joins are
+ * used only by boot; COMMIT joins pass false and own the operation once
+ * it has acquired s_net_lock. max_attempts bounds each caller's join window. */
 static esp_err_t rfv_join_blocking(const char *ssid, const char *pass,
-                                   uint32_t ip_timeout_ms)
+                                   uint32_t ip_timeout_ms, bool cancelable,
+                                   int max_attempts)
 {
     wifi_config_t cfg = {0};
     strncpy((char *)cfg.sta.ssid, ssid, sizeof(cfg.sta.ssid));
     strncpy((char *)cfg.sta.password, pass, sizeof(cfg.sta.password));
     cfg.sta.threshold.authmode =
         (pass[0] == '\0') ? WIFI_AUTH_OPEN : WIFI_AUTH_WPA2_PSK;
-    for (int attempt = 0; attempt < 4; attempt++) {
+    for (int attempt = 0; attempt < max_attempts; attempt++) {
+        if (rfv_boot_cancelled(cancelable)) {
+            return ESP_ERR_INVALID_STATE;
+        }
         esp_wifi_disconnect();
         vTaskDelay(pdMS_TO_TICKS(200));
+        if (rfv_boot_cancelled(cancelable)) {
+            return ESP_ERR_INVALID_STATE;
+        }
         /* Quiesce the driver: the example_connect retry handler calls
          * esp_wifi_connect() on every disconnect event, which otherwise
          * holds the driver in "connecting" state so set_config() can
@@ -190,16 +265,23 @@ static esp_err_t rfv_join_blocking(const char *ssid, const char *pass,
         vTaskDelay(pdMS_TO_TICKS(300));
         esp_wifi_start();
         vTaskDelay(pdMS_TO_TICKS(300));
+        if (rfv_boot_cancelled(cancelable)) {
+            return ESP_ERR_INVALID_STATE;
+        }
         if (esp_wifi_set_config(WIFI_IF_STA, &cfg) != ESP_OK) {
             vTaskDelay(pdMS_TO_TICKS(500));
             continue;
+        }
+        if (rfv_boot_cancelled(cancelable)) {
+            return ESP_ERR_INVALID_STATE;
         }
         if (esp_wifi_connect() != ESP_OK) {
             vTaskDelay(pdMS_TO_TICKS(500));
             continue;
         }
-        if (rfv_wait_for_ip(ip_timeout_ms)) {
-            return ESP_OK;
+        esp_err_t wait_err = rfv_wait_for_ip(ip_timeout_ms, cancelable);
+        if (wait_err != ESP_ERR_TIMEOUT) {
+            return wait_err;
         }
     }
     return ESP_ERR_TIMEOUT;
@@ -207,14 +289,22 @@ static esp_err_t rfv_join_blocking(const char *ssid, const char *pass,
 
 static esp_err_t rfv_wifi_reconnect(const char *ssid, const char *pass)
 {
-    if (rfv_join_blocking(ssid, pass, 20000) != ESP_OK) {
-        return ESP_ERR_TIMEOUT;
+    if (s_net_lock == NULL ||
+        xSemaphoreTake(s_net_lock, portMAX_DELAY) != pdTRUE) {
+        return ESP_FAIL;
     }
-    /* Re-bind CSI + stimulus to the NEW association (same functions,
-     * same parameters as boot — no behavior change, new target only). */
-    wifi_csi_init();
-    wifi_ping_router_start();
-    return ESP_OK;
+    s_net_csi_ready = false;
+    s_net_ping_ready = false;
+    esp_err_t err = rfv_join_blocking(ssid, pass,
+                                      RFV_COMMIT_JOIN_TIMEOUT_MS, false,
+                                      RFV_COMMIT_JOIN_ATTEMPTS);
+    if (err == ESP_OK) {
+        /* Re-bind CSI + stimulus to the NEW association (same functions,
+         * same parameters as boot — no behavior change, new target only). */
+        err = rfv_network_up_once();
+    }
+    xSemaphoreGive(s_net_lock);
+    return err;
 }
 
 /* Reconnect with stored runtime credentials when present. When they are
@@ -222,33 +312,41 @@ static esp_err_t rfv_wifi_reconnect(const char *ssid, const char *pass)
  * that is currently unreachable falls back to the Kconfig AP; this
  * function only returns ESP_OK while associated, so downstream CSI init
  * (which requires an association) can never observe a torn-down link.
- * Last resort when nothing is reachable: drop the poisoned record and
- * reboot into the clean Kconfig path instead of boot-looping. */
-static esp_err_t rfv_runtime_reconnect_if_stored(void)
+ * Last resort when nothing is reachable: keep the stored record (it may
+ * simply be out of range) and return failure so the caller idles with
+ * the provisioning parser alive — never reboot-loop, never lock out a
+ * later runtime provisioning exchange. */
+static esp_err_t rfv_runtime_reconnect_if_stored(bool cancelable)
 {
     char ssid[33] = {0};
     char pass[65] = {0};
     if (!rfv_load_runtime_creds(ssid, pass)) {
-        return ESP_OK;
+        return ESP_ERR_NOT_FOUND;
     }
     ESP_LOGI(TAG, "runtime credentials present; joining stored network");
     for (int round = 0; round < 3; round++) {
-        if (rfv_join_blocking(ssid, pass, 8000) == ESP_OK) {
+        esp_err_t err = rfv_join_blocking(ssid, pass, 8000, cancelable, 4);
+        if (err == ESP_OK) {
             return ESP_OK;
+        }
+        if (err == ESP_ERR_INVALID_STATE) {
+            return err;
         }
         ESP_LOGW(TAG, "stored join attempt %d failed; retrying", round + 1);
     }
     ESP_LOGW(TAG, "stored network unreachable; falling back to Kconfig AP");
-    if (rfv_join_blocking(CONFIG_EXAMPLE_WIFI_SSID,
-                           CONFIG_EXAMPLE_WIFI_PASSWORD,
-                           20000) == ESP_OK) {
+    esp_err_t err = rfv_join_blocking(CONFIG_EXAMPLE_WIFI_SSID,
+                                      CONFIG_EXAMPLE_WIFI_PASSWORD,
+                                      20000, cancelable, 4);
+    if (err == ESP_OK) {
         return ESP_OK;
     }
-    ESP_LOGE(TAG, "no known network reachable; clearing stored creds");
-    rfv_clear_runtime_creds();
+    if (err == ESP_ERR_INVALID_STATE) {
+        return err;
+    }
+    ESP_LOGE(TAG, "no known network reachable; staying provisionable");
     vTaskDelay(pdMS_TO_TICKS(500));
-    esp_restart();
-    return ESP_FAIL; /* unreachable */
+    return ESP_FAIL;
 }
 
 static void rfv_handle_prov_line(const char *line)
@@ -293,14 +391,19 @@ static void rfv_handle_prov_line(const char *line)
         ets_printf("RFV_OK STORED\n");
         /* NOTE: staged password bytes stay in RAM only; never printed. */
         s_rfv_quiet_until = xTaskGetTickCount() + pdMS_TO_TICKS(120000);
+        /* Request boot cancellation before waiting for the network lock.
+         * A failed join returns ownership so the boot observer can resume. */
+        rfv_request_boot_preemption();
         if (rfv_wifi_reconnect(s_staged_ssid, s_staged_pass) != ESP_OK) {
             ets_printf("RFV_ERR reconnect-failed\n");
             s_rfv_quiet = false;
+            rfv_finish_boot_preemption(false);
             return;
         }
         ets_printf("RFV_OK CONNECTED\n");
         rfv_emit_net_status();
         s_rfv_quiet = false;
+        rfv_finish_boot_preemption(true);
     } else if (strcmp(line, "RFV_NET_STATUS") == 0) {
         rfv_emit_net_status();
     }
@@ -431,7 +534,7 @@ static void wifi_csi_rx_cb(void *ctx, wifi_csi_info_t *info)
     s_count++;
 }
 
-static void wifi_csi_init(void)
+static esp_err_t wifi_csi_init(void)
 {
     /**
      * @brief In order to ensure the compatibility of routers, only LLTF sub-carriers are selected.
@@ -480,10 +583,27 @@ static void wifi_csi_init(void)
     };
 #endif
     static wifi_ap_record_t s_ap_info = {0};
-    ESP_ERROR_CHECK(esp_wifi_sta_get_ap_info(&s_ap_info));
-    ESP_ERROR_CHECK(esp_wifi_set_csi_config(&csi_config));
-    ESP_ERROR_CHECK(esp_wifi_set_csi_rx_cb(wifi_csi_rx_cb, s_ap_info.bssid));
-    ESP_ERROR_CHECK(esp_wifi_set_csi(true));
+    esp_err_t err = esp_wifi_sta_get_ap_info(&s_ap_info);
+    if (err != ESP_OK) {
+        ESP_LOGE(TAG, "CSI init: AP unavailable: %s", esp_err_to_name(err));
+        return err;
+    }
+    err = esp_wifi_set_csi_config(&csi_config);
+    if (err != ESP_OK) {
+        ESP_LOGE(TAG, "CSI init: config failed: %s", esp_err_to_name(err));
+        return err;
+    }
+    err = esp_wifi_set_csi_rx_cb(wifi_csi_rx_cb, s_ap_info.bssid);
+    if (err != ESP_OK) {
+        ESP_LOGE(TAG, "CSI init: callback failed: %s", esp_err_to_name(err));
+        return err;
+    }
+    err = esp_wifi_set_csi(true);
+    if (err != ESP_OK) {
+        ESP_LOGE(TAG, "CSI init: enable failed: %s", esp_err_to_name(err));
+        return err;
+    }
+    return ESP_OK;
 }
 
 static esp_err_t wifi_ping_router_start(void)
@@ -504,17 +624,188 @@ static esp_err_t wifi_ping_router_start(void)
     ping_config.task_stack_size   = 3072;
     ping_config.data_size         = 1;
 
-    esp_netif_ip_info_t local_ip;
-    esp_netif_get_ip_info(esp_netif_get_handle_from_ifkey("WIFI_STA_DEF"), &local_ip);
+    esp_netif_ip_info_t local_ip = {0};
+    esp_err_t err = esp_netif_get_ip_info(
+        esp_netif_get_handle_from_ifkey("WIFI_STA_DEF"), &local_ip);
+    if (err != ESP_OK) {
+        ESP_LOGE(TAG, "ping init: IP lookup failed: %s", esp_err_to_name(err));
+        return err;
+    }
+    if (local_ip.ip.addr == 0 || local_ip.gw.addr == 0) {
+        ESP_LOGW(TAG, "ping init: no usable IP/gateway yet");
+        return ESP_ERR_INVALID_STATE;
+    }
     ESP_LOGI(TAG, "got ip:" IPSTR ", gw: " IPSTR, IP2STR(&local_ip.ip), IP2STR(&local_ip.gw));
     ping_config.target_addr.u_addr.ip4.addr = ip4_addr_get_u32(&local_ip.gw);
     ping_config.target_addr.type = ESP_IPADDR_TYPE_V4;
 
     esp_ping_callbacks_t cbs = { 0 };
-    esp_ping_new_session(&ping_config, &cbs, &ping_handle);
-    esp_ping_start(ping_handle);
+    err = esp_ping_new_session(&ping_config, &cbs, &ping_handle);
+    if (err != ESP_OK) {
+        ESP_LOGE(TAG, "ping init: session failed: %s", esp_err_to_name(err));
+        ping_handle = NULL;
+        return err;
+    }
+    err = esp_ping_start(ping_handle);
+    if (err != ESP_OK) {
+        ESP_LOGE(TAG, "ping init: start failed: %s", esp_err_to_name(err));
+        esp_ping_delete_session(ping_handle);
+        ping_handle = NULL;
+        return err;
+    }
 
     return ESP_OK;
+}
+
+/* Called with s_net_lock held. Each successful stage is remembered so a
+ * transient failure of the later stage cannot cause duplicate CSI setup. */
+static esp_err_t rfv_network_up_once(void)
+{
+    if (s_net_csi_ready && s_net_ping_ready) {
+        return ESP_OK;
+    }
+    if (!rfv_is_associated()) {
+        return ESP_ERR_INVALID_STATE;
+    }
+    if (!s_net_csi_ready) {
+        esp_err_t err = wifi_csi_init();
+        if (err != ESP_OK) {
+            return err;
+        }
+        s_net_csi_ready = true;
+    }
+    if (!s_net_ping_ready) {
+        esp_err_t err = wifi_ping_router_start();
+        if (err != ESP_OK) {
+            return err;
+        }
+        s_net_ping_ready = true;
+    }
+    return ESP_OK;
+}
+
+/* Non-public protocol_examples_common helpers (defined in the IDF
+ * component; these are the same functions example_connect() uses
+ * internally, only the blocking IP wait is skipped). */
+extern void example_wifi_start(void);
+extern esp_err_t example_wifi_sta_do_connect(wifi_config_t wifi_config, bool wait);
+
+/* Mirror of example_wifi_connect() with wait=false: identical Kconfig
+ * join attempt (same SSID/password/scan parameters), but returns
+ * immediately after starting the attempt instead of blocking on an IP
+ * with an unbounded wait. Association (if any) is observed later via
+ * rfv_is_associated(); a missing Kconfig AP only yields background
+ * retries bounded by CONFIG_EXAMPLE_WIFI_CONN_MAX_RETRY. The driver has
+ * already been started once by app_main. The initial call runs before the
+ * parser exists; later boot/COMMIT paths run with s_net_lock held. */
+static esp_err_t rfv_kconfig_attempt_nonblocking(void)
+{
+    wifi_config_t wifi_config = {
+        .sta = {
+            .ssid = CONFIG_EXAMPLE_WIFI_SSID,
+            .password = CONFIG_EXAMPLE_WIFI_PASSWORD,
+            .scan_method = EXAMPLE_WIFI_SCAN_METHOD,
+            .sort_method = EXAMPLE_WIFI_CONNECT_AP_SORT_METHOD,
+            .threshold.rssi = CONFIG_EXAMPLE_WIFI_SCAN_RSSI_THRESHOLD,
+            .threshold.authmode = EXAMPLE_WIFI_SCAN_AUTH_MODE_THRESHOLD,
+        },
+    };
+    esp_err_t err = example_wifi_sta_do_connect(wifi_config, false);
+    if (err != ESP_OK) {
+        ESP_LOGW(TAG, "Kconfig join attempt not started: %s", esp_err_to_name(err));
+    }
+    return err;
+}
+
+/* One initial stored attempt registers the same example handlers as the
+ * Kconfig path (preserving bounded auto-retry), while keeping stored
+ * credentials ahead of the Kconfig fallback. */
+static esp_err_t rfv_stored_attempt_nonblocking(const char *ssid, const char *pass)
+{
+    wifi_config_t wifi_config = {0};
+    strncpy((char *)wifi_config.sta.ssid, ssid, sizeof(wifi_config.sta.ssid));
+    strncpy((char *)wifi_config.sta.password, pass, sizeof(wifi_config.sta.password));
+    wifi_config.sta.threshold.authmode =
+        (pass[0] == '\0') ? WIFI_AUTH_OPEN : WIFI_AUTH_WPA2_PSK;
+    esp_err_t err = example_wifi_sta_do_connect(wifi_config, false);
+    if (err != ESP_OK) {
+        ESP_LOGW(TAG, "stored join attempt not started: %s", esp_err_to_name(err));
+    }
+    return err;
+}
+
+/* Register the example handlers once, before the parser can issue a
+ * COMMIT, using the highest-priority network: stored credentials when
+ * present, otherwise Kconfig. The attempt itself is non-blocking. */
+static void rfv_start_initial_connect(void)
+{
+    char ssid[33] = {0};
+    char pass[65] = {0};
+    if (rfv_load_runtime_creds(ssid, pass)) {
+        (void)rfv_stored_attempt_nonblocking(ssid, pass);
+    } else {
+        (void)rfv_kconfig_attempt_nonblocking();
+    }
+}
+
+/* Boot owns s_net_lock across its join/observer window. COMMIT sets the
+ * preemption state before waiting for that lock; every boot wait checks the
+ * state so ownership is released even when no AP is present. A failed COMMIT
+ * clears the state and lets boot resume its observer without rerunning the
+ * initial stored join. */
+static void rfv_boot_network(void)
+{
+    bool reconnect_done = false;
+    for (;;) {
+        if (s_net_lock == NULL ||
+            xSemaphoreTake(s_net_lock, portMAX_DELAY) != pdTRUE) {
+            return;
+        }
+        rfv_boot_state_t state = rfv_get_boot_state();
+        if (state == RFV_COMMIT_COMPLETE) {
+            break;
+        }
+        if (state == RFV_COMMIT_ACTIVE) {
+            xSemaphoreGive(s_net_lock);
+            vTaskDelay(pdMS_TO_TICKS(100));
+            reconnect_done = true;
+            continue;
+        }
+
+        if (!reconnect_done) {
+            esp_err_t stored_net = rfv_runtime_reconnect_if_stored(true);
+            if (stored_net == ESP_OK) {
+                if (!rfv_boot_preempted() &&
+                    rfv_network_up_once() == ESP_OK &&
+                    !rfv_boot_preempted()) {
+                    break;
+                }
+            } else if (stored_net != ESP_ERR_NOT_FOUND &&
+                       stored_net != ESP_ERR_INVALID_STATE) {
+                ESP_LOGW(TAG, "stored reconnect failed; staying provisionable");
+            }
+            reconnect_done = true;
+            if (rfv_boot_preempted()) {
+                xSemaphoreGive(s_net_lock);
+                continue;
+            }
+        }
+
+        ESP_LOGW(TAG, "observing network readiness (RFV_* live)");
+        while (rfv_get_boot_state() == RFV_BOOT_ACTIVE) {
+            if (rfv_is_associated() &&
+                rfv_network_up_once() == ESP_OK) {
+                if (!rfv_boot_preempted()) {
+                    xSemaphoreGive(s_net_lock);
+                    return;
+                }
+                break;
+            }
+            vTaskDelay(pdMS_TO_TICKS(200));
+        }
+        xSemaphoreGive(s_net_lock);
+    }
+    xSemaphoreGive(s_net_lock);
 }
 
 void app_main()
@@ -523,23 +814,26 @@ void app_main()
     ESP_ERROR_CHECK(esp_netif_init());
     ESP_ERROR_CHECK(esp_event_loop_create_default());
 
-    /**
-     * @brief This helper function configures Wi-Fi, as selected in menuconfig.
-     *        Read "Establishing Wi-Fi Connection" section in esp-idf/examples/protocols/README.md
-     *        for more information about this function.
-     */
-    ESP_ERROR_CHECK(example_connect());
-
-    /* Runtime provisioning: joins the NVS-stored network when present,
-     * no-op otherwise (validated boot path identical). Never aborts:
-     * a stored network that is currently unreachable must fall back to
-     * the Kconfig AP via the example_connect retry loop, not reboot. */
-    if (rfv_runtime_reconnect_if_stored() != ESP_OK) {
-        ESP_LOGW(TAG, "stored reconnect failed; staying on Kconfig AP");
+    s_net_lock = xSemaphoreCreateMutex();
+    if (s_net_lock == NULL) {
+        ESP_LOGE(TAG, "network mutex allocation failed");
+        return;
     }
 
-    wifi_csi_init();
-    wifi_ping_router_start();
+    /* Start the Wi-Fi driver exactly once, then register the example event
+     * handlers with a non-blocking stored/Kconfig attempt. This happens
+     * before the parser so an immediate COMMIT cannot leave the driver
+     * without its bounded auto-retry handlers. */
+    example_wifi_start();
+    rfv_start_initial_connect();
+
+    /* Provisioning parser first: RFV_ commands must be answerable even
+     * when no known AP is reachable. The task needs only the console
+     * UART (up from startup) plus lazy NVS access, so it is independent
+     * of Wi-Fi association (STATUS answers not-associated; BEGIN/SSID/
+     * PASS stage RAM only; COMMIT joins through the existing path). */
     xTaskCreate(rfv_prov_task, "rfv_prov", 3072, NULL,
                 tskIDLE_PRIORITY + 1, NULL);
+
+    rfv_boot_network();
 }

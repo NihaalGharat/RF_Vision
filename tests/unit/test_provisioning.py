@@ -3,6 +3,10 @@
 Fake serial only — no hardware, no ports opened.
 """
 
+import inspect
+import re
+from pathlib import Path
+
 import pytest
 
 from csi.transport.provisioning import (
@@ -16,6 +20,8 @@ from csi.transport.provisioning import (
 )
 
 SECRET = "s3cr3t-p@ss w0rd"
+FIRMWARE_APP = (Path(__file__).resolve().parents[2] /
+                "firmware/esp32/csi_recv_router/main/app_main.c")
 
 
 class FakeSerial:
@@ -68,6 +74,30 @@ def test_happy_path_provisions_node():
     assert SECRET not in res.reason
 
 
+def _firmware_int(name):
+    text = FIRMWARE_APP.read_text(encoding="utf-8")
+    match = re.search(rf"^#define\s+{name}\s+(\d+)\s*$", text,
+                      re.MULTILINE)
+    assert match is not None
+    return int(match.group(1))
+
+
+def test_commit_join_budget_fits_host_waits():
+    from web import network as network_api
+
+    host_waits = (
+        inspect.signature(ProvisioningSession.provision_node)
+        .parameters["timeout_s"].default,
+        inspect.signature(network_api.provision_nodes)
+        .parameters["timeout_s"].default,
+    )
+    join_budget_s = (
+        _firmware_int("RFV_COMMIT_JOIN_TIMEOUT_MS") *
+        _firmware_int("RFV_COMMIT_JOIN_ATTEMPTS")
+    ) / 1000.0
+    assert join_budget_s <= min(host_waits) - 5.0
+
+
 def test_credential_validation_rejects_bad_input():
     with pytest.raises(CredentialsError):
         Credentials("", SECRET)
@@ -96,6 +126,23 @@ def test_node_rejection_surfaces_without_secret():
     finally:
         creds.clear()
     assert res.state == "PROVISIONING_FAILED"
+    assert SECRET not in res.reason
+
+
+def test_commit_failure_after_stored_reports_without_secret():
+    script = _happy_script()[:3]
+    script.append(("RFV_PROV_COMMIT",
+                   ["RFV_OK STORED", "RFV_ERR reconnect-failed"]))
+    serial = FakeSerial(script)
+    session = ProvisioningSession(["esp32-a"])
+    creds = Credentials("Cafe Net", SECRET)
+    try:
+        res = session.provision_node(
+            "esp32-a", creds, serial.write_line, serial.read_line)
+    finally:
+        creds.clear()
+    assert res.state == "PROVISIONING_FAILED"
+    assert "reconnect-failed" in res.reason
     assert SECRET not in res.reason
 
 
