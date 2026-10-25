@@ -97,18 +97,22 @@ def _node_checks_from_dual(info: Dict[str, Any],
         signal = node.get("signal", {}) or {}
         have_bssid = str(signal.get("bssid", "") or "").lower()
         have_channel = signal.get("channel")
+        valid = int(stream.get("valid", 0) or 0)
+        fresh = valid > 0 and not bool(stream.get("stale"))
         checks.append(readiness.NodeCheck(
             node_id=nid,
             identity_ok=bool(node.get("board_mac"))
             and node.get("board_mac") != "UNKNOWN",
             reachable=node.get("source_state") in (
                 "LIVE_VERIFIED", "LIVE_UNVERIFIED"),
-            csi_available=int(stream.get("valid", 0) or 0) > 0,
+            csi_available=valid > 0,
             bssid_match=(want_bssid is not None
                          and have_bssid == want_bssid),
             channel_match=(want_channel is not None
                            and have_channel == want_channel),
-            source_verified=node.get("source_state") == "LIVE_VERIFIED",
+            fresh=fresh,
+            source_verified=(node.get("source_state") == "LIVE_VERIFIED"
+                             and fresh),
         ))
     return checks
 

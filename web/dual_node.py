@@ -107,7 +107,8 @@ class NodeProvider(sources.LiveProvider):
             "jitter_ns": self.sync.jitter,
             "drift_per_sample_ns": self.sync.drift_per_sample,
             "observations": self.sync.n,
-            "ready": self.sync.stable(SYNC_MAX_JITTER_NS, SYNC_MIN_N),
+            "ready": (self.sync.stable(SYNC_MAX_JITTER_NS, SYNC_MIN_N)
+                      and self.fresh),
         }
         base["timing"] = {
             # NOT physical latency — see module docstring + note.
@@ -215,9 +216,12 @@ class DualNodeSession:
     def sync_state(self) -> Dict[str, Any]:
         """Session sync state from per-node estimator readiness."""
         nodes: Dict[str, Any] = {}
+        fresh = {}
         for nid, provider in self.providers.items():
             est = provider.sync
-            ready = est.stable(self.sync_max_jitter_ns, self.sync_min_n)
+            fresh[nid] = provider.fresh
+            ready = (est.stable(self.sync_max_jitter_ns, self.sync_min_n)
+                     and fresh[nid])
             nodes[nid] = {
                 "observations": est.n,
                 "offset_ns": est.offset,
@@ -227,6 +231,8 @@ class DualNodeSession:
             }
         if not nodes:
             state = "UNSYNCED"
+        elif not all(fresh.values()):
+            state = "UNSYNCED"
         elif any(n["observations"] < self.sync_min_n for n in nodes.values()):
             state = "UNSYNCED"
         elif all(n["ready"] for n in nodes.values()):
@@ -235,8 +241,8 @@ class DualNodeSession:
             state = "SYNCING"
         return {
             "state": state,
-            "criterion": (f"SYNCED iff every node has >= {self.sync_min_n} "
-                          f"observations AND jitter <= "
+            "criterion": (f"SYNCED iff every node has fresh data, >= "
+                          f"{self.sync_min_n} observations, AND jitter <= "
                           f"{self.sync_max_jitter_ns} ns; SYNCED means both "
                           f"device clocks are stably mapped to host time, "
                           f"NOT that the ESP32 clocks are synchronized."),

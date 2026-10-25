@@ -10,7 +10,8 @@ from csi.transport.rf_readiness import (
 def _good_node(node_id="esp32-a"):
     return NodeCheck(node_id=node_id, identity_ok=True, reachable=True,
                      csi_available=True, bssid_match=True,
-                     channel_match=True, source_verified=True)
+                     channel_match=True, fresh=True,
+                     source_verified=True)
 
 
 def test_states_vocabulary_complete():
@@ -43,6 +44,45 @@ def test_association_alone_never_rf_ready():
         sync_state="SYNCED")
     assert res.state == "CSI_UNAVAILABLE"
     assert res.rf_ready is False
+
+
+def test_nodecheck_fresh_defaults_false():
+    assert NodeCheck(node_id="esp32-a").fresh is False
+
+
+def test_stale_nodes_never_rf_ready():
+    for stale in ("esp32-a", "esp32-b", "both"):
+        nodes = [
+            _good_node("esp32-a"),
+            _good_node("esp32-b"),
+        ]
+        if stale in ("esp32-a", "both"):
+            nodes[0] = NodeCheck(
+                node_id="esp32-a", identity_ok=True, reachable=True,
+                csi_available=True, bssid_match=True, channel_match=True,
+                fresh=False, source_verified=True)
+        if stale in ("esp32-b", "both"):
+            nodes[1] = NodeCheck(
+                node_id="esp32-b", identity_ok=True, reachable=True,
+                csi_available=True, bssid_match=True, channel_match=True,
+                fresh=False, source_verified=True)
+        res = evaluate_rf_readiness(
+            network_state="NETWORK_DETECTED", nodes_expected=2,
+            nodes=nodes, sync_state="SYNCED")
+        assert res.state == "CSI_UNAVAILABLE"
+        assert res.rf_ready is False
+        assert "fresh" in res.reason
+
+
+def test_no_valid_observation_is_not_fresh():
+    nodes = [NodeCheck(node_id=nid, identity_ok=True, reachable=True)
+             for nid in ("esp32-a", "esp32-b")]
+    res = evaluate_rf_readiness(
+        network_state="NETWORK_DETECTED", nodes_expected=2, nodes=nodes,
+        sync_state="SYNCED")
+    assert res.state == "CSI_UNAVAILABLE"
+    assert res.rf_ready is False
+    assert nodes[0].fresh is False and nodes[1].fresh is False
 
 
 def test_unsupported_network_blocks_everything():

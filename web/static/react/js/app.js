@@ -101,7 +101,7 @@ function Shell({ ws }) {
             : "provenance: console unreachable"),
           h("span", null, "RF Vision research instrument — estimates are not conclusions"),
           h(Clock, null),
-          h("span", null, h("a", { href: "/" }, "Legacy console"))))));
+          h("span", null, h("a", { href: "/legacy" }, "Legacy console"))))));
 }
 
 function boot() {
@@ -141,6 +141,6 @@ document.addEventListener("DOMContentLoaded", () => {
     console.error("react boot failed", e);
     const el = document.getElementById("react-boot-error");
     el.hidden = false;
-    el.textContent = `BOOT FAILURE — ${e.message}. Legacy console unaffected at /`;
+    el.textContent = `BOOT FAILURE — ${e.message}. Legacy console unaffected at /legacy`;
   }
 });

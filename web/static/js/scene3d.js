@@ -8,6 +8,10 @@
    three.js r160 vendored locally (see docs/software/THREEJS_VERSION.md). */
 import * as THREE from "three";
 import { OrbitControls } from "three/addons/OrbitControls.js";
+// Phase 2: pure false-colour mapping for the live RF disturbance overlay.
+// Presentation only (no acquisition/inference); pernode.js has no imports,
+// so this adds no load cascade for any consumer of this scene.
+import { thermalColor } from "../react/js/services/pernode.js";
 
 export class RfLinkScene {
   constructor(container) {
@@ -90,6 +94,7 @@ export class RfLinkScene {
 
     // RF field strip: 64-segment plane under the link, vertex-colored by
     // the latest amplitude vector (abstraction, not a propagation model).
+    // Node-A signal strip (existing mesh, cyan→red presentation ramp).
     const SEG = 64;
     const fieldGeo = new THREE.PlaneGeometry(4, 1.2, SEG - 1, 1);
     fieldGeo.rotateX(-Math.PI / 2);
@@ -100,6 +105,31 @@ export class RfLinkScene {
     }));
     this.field.position.y = 0.02;
     this.scene.add(this.field);
+    // Node-B signal strip: created lazily on first per-node B frame (same
+    // tone-index mapping, parallel offset). fieldB is null until then, so
+    // single-source callers never pay for or see a second strip.
+    // The z-offset is PRESENTATION ARRANGEMENT ONLY — not physical distance.
+    this.fieldB = null;
+
+    // Phase 2 (live RF thermal disturbance overlay): per-node false-colour
+    // planes painted from each node's OWN disturb vector. Created lazily on
+    // first per-node frame; null until then. Vertical, immediately in front
+    // of the Phase 1 room-image plane, translucent so the room stays
+    // recognizable. Tone index runs along the width — the SAME signal-domain
+    // convention as the strips, NOT room coordinates. Left half = NODE A RF
+    // CHANGE, right half = NODE B RF CHANGE (explicit composition, never a
+    // calibrated spatial fusion). SIGNAL-DERIVED presentation only.
+    this.thermalA = null;
+    this.thermalB = null;
+
+    // Phase 3 (approximate RF evidence field): three coarse translucent floor
+    // bands for the NEAR-A / BETWEEN / NEAR-B evidence zones. Created lazily,
+    // null until the first RF_ESTIMATE field arrives. Band centers are thirds
+    // of the CURRENT approximate A/B marker layout (presentation arrangement
+    // only — not surveyed geometry, not room coordinates); opacity encodes
+    // the deterministic zone evidence score. Shown ONLY at RF_ESTIMATE tier —
+    // RF_ACTIVITY and below render nothing (no spatial claim visualized).
+    this.zoneField = null;
 
     this.hud = document.createElement("div");
     this.hud.className = "scene-hud";
@@ -168,26 +198,336 @@ export class RfLinkScene {
     this._updateHud();
   }
 
+  // Per-node signal-strip layer (additive; legacy single-strip callers
+  // never pass `nodes` and keep byte-identical behavior).
+  // RAMP_A reuses the existing cyan→red presentation encoding; RAMP_B is a
+  // distinct violet→amber encoding so the streams stay distinguishable.
+  // Ramps encode RELATIVE amplitude within one frame — never absolute
+  // power, never space. DISTURB_HEIGHT_M is a presentation scale for
+  // measured signal change (RF DISTURBANCE), not a physical unit.
+  static RAMP_A = { r0: 0.2, r1: 0.8, g0: 0.75, g1: -0.55, b0: 0.85, b1: -0.45 };
+  static RAMP_B = { r0: 0.45, r1: 0.55, g0: 0.35, g1: 0.30, b0: 0.9, b1: -0.7 };
+  static DISTURB_HEIGHT_M = 0.9;
+
+  _ensureFieldB() {
+    if (this.fieldB) return;
+    const SEG = 64;
+    const geo = new THREE.PlaneGeometry(4, 1.2, SEG - 1, 1);
+    geo.rotateX(-Math.PI / 2);
+    const colors = new Float32Array(geo.attributes.position.count * 3);
+    geo.setAttribute("color", new THREE.BufferAttribute(colors, 3));
+    this.fieldB = new THREE.Mesh(geo, new THREE.MeshBasicMaterial({
+      vertexColors: true, transparent: true, opacity: 0.75, side: THREE.DoubleSide,
+    }));
+    this.fieldB.position.set(0, 0.02, -1.3);
+    this.fieldB.visible = false;
+    this.scene.add(this.fieldB);
+  }
+
+  // Paint one node strip from that node's OWN amplitude vector (+ optional
+  // measured disturbance for vertex height). Pure presentation.
+  _paintStrip(mesh, slot, ramp) {
+    const amps = slot.amplitudes;
+    let lo = Math.min(...amps), hi = Math.max(...amps);
+    if (!(hi > lo)) hi = lo + 1;
+    const attr = mesh.geometry.attributes;
+    const pos = attr.position, col = attr.color;
+    const dev = (slot.disturb && slot.disturb.length === amps.length) ? slot.disturb : null;
+    const H = RfLinkScene.DISTURB_HEIGHT_M;
+    for (let i = 0; i < pos.count; i++) {
+      const seg = Math.min(amps.length - 1,
+        Math.floor(((pos.getX(i) + 2) / 4) * amps.length));
+      const t = (amps[seg] - lo) / (hi - lo);
+      col.setXYZ(i,
+        ramp.r0 + ramp.r1 * t, ramp.g0 + ramp.g1 * t, ramp.b0 + ramp.b1 * t);
+      pos.setY(i, dev ? Math.max(0, Math.min(1, dev[seg])) * H : 0);
+    }
+    col.needsUpdate = true;
+    pos.needsUpdate = true;
+    mesh.material.opacity = slot.stale ? 0.15 : 0.75;
+    mesh.visible = true;
+  }
+
+  // Phase 2: build (once) and paint (per frame) the per-node thermal
+  // planes. Each plane paints ONLY its own node's disturb vector via the
+  // pure thermalColor mapping; stale slots ride dimmed (opacity 0.08) with
+  // STALE in the HUD — never presented as current. Bounded: two fixed
+  // 63×2-vertex planes, colors updated in place, no history, no new loop.
+  _ensureThermal() {
+    if (this.thermalA && this.thermalB) return;
+    const mk = (x) => {
+      const geo = new THREE.PlaneGeometry(2.5, 2.6, 62, 1);
+      const colors = new Float32Array(geo.attributes.position.count * 3);
+      geo.setAttribute("color", new THREE.BufferAttribute(colors, 3));
+      const mesh = new THREE.Mesh(geo, new THREE.MeshBasicMaterial({
+        vertexColors: true, transparent: true, opacity: 0.5,
+        side: THREE.DoubleSide, depthWrite: false,
+      }));
+      mesh.position.set(x, 1.3, -1.9);
+      mesh.renderOrder = 1;
+      mesh.visible = false;
+      this.scene.add(mesh);
+      return mesh;
+    };
+    if (!this.thermalA) this.thermalA = mk(-1.25);
+    if (!this.thermalB) this.thermalB = mk(1.25);
+  }
+
+  _paintThermal(mesh, slot) {
+    const dev = slot.disturb;
+    const attr = mesh.geometry.attributes;
+    const col = attr.color;
+    const n = dev.length;
+    for (let i = 0; i < col.count; i++) {
+      // PlaneGeometry emits (63 × 2) vertices left-to-right; column index
+      // selects the tone — signal-domain order, not room position.
+      const ix = i % 63;
+      const seg = Math.min(n - 1, Math.floor((ix / 63) * n));
+      const c = thermalColor(dev[seg]);
+      col.setXYZ(i, c[0], c[1], c[2]);
+    }
+    col.needsUpdate = true;
+    mesh.material.opacity = slot.stale ? 0.08 : 0.5;
+    mesh.visible = true;
+  }
+
+  _clearThermal() {
+    for (const k of ["thermalA", "thermalB"]) {
+      const m = this[k];
+      this[k] = null;
+      if (!m) continue;
+      if (m.parent) m.parent.remove(m);
+      try { m.geometry.dispose(); } catch { /* already torn down */ }
+      try { m.material.dispose(); } catch { /* already torn down */ }
+    }
+  }
+
+  // Phase 3: build (once) and paint (per field) the three coarse evidence
+  // bands. field = {tier, zones:{nearA,between,nearB}, leader} or null.
+  // Anything but RF_ESTIMATE hides the group — stale/reset states can never
+  // leave a spatial claim on screen. Bounded: three unit boxes, scaled and
+  // re-tinted in place, no history, no new loop.
+  _ensureZoneField() {
+    if (this.zoneField) return;
+    const group = new THREE.Group();
+    const meshes = {};
+    for (const k of ["nearA", "between", "nearB"]) {
+      const mesh = new THREE.Mesh(
+        new THREE.BoxGeometry(1, 0.06, 1),
+        new THREE.MeshBasicMaterial({
+          color: 0xe0a63c, transparent: true, opacity: 0,
+          depthWrite: false,
+        }));
+      mesh.position.y = 0.05;
+      mesh.renderOrder = 2;
+      mesh.visible = false;
+      group.add(mesh);
+      meshes[k] = mesh;
+    }
+    group.visible = false;
+    this.scene.add(group);
+    this.zoneField = { group, meshes };
+  }
+
+  _paintZoneField(field) {
+    this._ensureZoneField();
+    const { group, meshes } = this.zoneField;
+    const show = Boolean(
+      field && field.tier === "RF_ESTIMATE" && field.zones &&
+      this.markerA && this.markerB);
+    group.visible = show;
+    if (!show) {
+      for (const k of ["nearA", "between", "nearB"]) meshes[k].visible = false;
+      return;
+    }
+    // Thirds between the approximate marker positions (layout only).
+    const ax = this.markerA.position.x, az = this.markerA.position.z;
+    const bx = this.markerB.position.x, bz = this.markerB.position.z;
+    const order = ["nearA", "between", "nearB"];
+    for (let i = 0; i < order.length; i++) {
+      const k = order[i];
+      const mesh = meshes[k];
+      const c0 = i / 3, c1 = (i + 1) / 3, cm = (c0 + c1) / 2;
+      const score = Math.max(0, Math.min(1, Number(field.zones[k]) || 0));
+      mesh.position.x = ax + (bx - ax) * cm;
+      mesh.position.z = az + (bz - az) * cm;
+      mesh.scale.x = Math.max(Math.abs(bx - ax) / 3, 0.05);
+      mesh.scale.z = Math.max(Math.abs(bz - az) / 3, 0.05);
+      mesh.material.opacity = 0.05 + 0.30 * score;
+      mesh.visible = true;
+    }
+  }
+
+  _clearZoneField() {
+    const zf = this.zoneField;
+    this.zoneField = null;
+    if (!zf) return;
+    if (zf.group.parent) zf.group.parent.remove(zf.group);
+    for (const k of ["nearA", "between", "nearB"]) {
+      try { zf.meshes[k].geometry.dispose(); } catch { /* already torn down */ }
+      try { zf.meshes[k].material.dispose(); } catch { /* already torn down */ }
+    }
+  }
+
+  // Phase 1 (room twin foundation): session-local room-image backdrop.
+  // A textured plane on the back face of the room volume; the RF strips
+  // render in front of it. `url` is a session-local browser object URL (or
+  // null for the no-image state) — never uploaded, never persisted.
+  // VISUAL CONTEXT ONLY: never an RF reconstruction, never calibrated.
+  setRoomImage(url) {
+    if (!this.ready || !this.scene) return;
+    const token = (this._roomImageToken = (this._roomImageToken || 0) + 1);
+    this._clearRoomImage();
+    if (!url) return;
+    try {
+      new THREE.TextureLoader().load(url, (tex) => {
+        if (token !== this._roomImageToken || !this.ready || !this.scene) {
+          try { tex.dispose(); } catch { /* already torn down */ }
+          return;
+        }
+        if (THREE.SRGBColorSpace !== undefined) tex.colorSpace = THREE.SRGBColorSpace;
+        const mesh = new THREE.Mesh(
+          new THREE.PlaneGeometry(5, 2.6),
+          new THREE.MeshBasicMaterial({ map: tex }));
+        mesh.position.set(0, 1.3, -1.95);
+        this.scene.add(mesh);
+        this.roomImage = mesh;
+      }, undefined, () => { /* load failed: keep the no-image state */ });
+    } catch { /* keep the no-image state */ }
+  }
+
+  _clearRoomImage() {
+    const m = this.roomImage;
+    this.roomImage = null;
+    if (!m) return;
+    if (m.parent) m.parent.remove(m);
+    try { m.geometry.dispose(); } catch { /* already torn down */ }
+    const mat = m.material;
+    if (mat) {
+      try { if (mat.map) mat.map.dispose(); } catch { /* already torn down */ }
+      try { mat.dispose(); } catch { /* already torn down */ }
+    }
+  }
+
+  // Phase 1: approximate ESP32-A/B visual placement markers (layout only).
+  // p = {A:{x,z}, B:{x,z}} in room meters, clamped to the room volume.
+  // Presentation only — NOT SURVEYED, NOT MEASURED. Never an input to
+  // calibration, inference, contracts, or research analysis.
+  setPlacements(p) {
+    if (!this.ready || !this.scene) return;
+    this._ensureMarkers();
+    const put = (key, mesh) => {
+      const v = (p && p[key]) || {};
+      const x = Math.max(-2.5, Math.min(2.5, Number(v.x) || 0));
+      const z = Math.max(-2, Math.min(2, Number(v.z) || 0));
+      mesh.position.set(x, 0.15, z);
+    };
+    put("A", this.markerA);
+    put("B", this.markerB);
+  }
+
+  _ensureMarkers() {
+    if (this.markerA && this.markerB) return;
+    const mk = (color, css, tag) => {
+      const g = new THREE.Group();
+      const dot = new THREE.Mesh(
+        new THREE.SphereGeometry(0.12, 16, 16),
+        new THREE.MeshBasicMaterial({ color }));
+      dot.position.y = 0.1;
+      g.add(dot);
+      const label = this._textSprite(tag, css);
+      label.position.y = 0.5;
+      g.add(label);
+      this.scene.add(g);
+      return g;
+    };
+    // Cyan (A) / violet (B): distinct from the router-blue / ESP32-green
+    // single-link pair and from the amber uncertainty marker.
+    this.markerA = mk(0x37c6d4, "#37c6d4", "A");
+    this.markerB = mk(0xc084fc, "#c084fc", "B");
+  }
+
+  _textSprite(text, css) {
+    const c = document.createElement("canvas");
+    c.width = 128; c.height = 128;
+    const g = c.getContext("2d");
+    g.beginPath(); g.arc(64, 64, 52, 0, Math.PI * 2);
+    g.fillStyle = "rgba(0,0,0,0.6)"; g.fill();
+    g.lineWidth = 6; g.strokeStyle = css; g.stroke();
+    g.fillStyle = "#ffffff"; g.font = "bold 64px sans-serif";
+    g.textAlign = "center"; g.textBaseline = "middle";
+    g.fillText(text, 64, 68);
+    const tex = new THREE.CanvasTexture(c);
+    if (THREE.SRGBColorSpace !== undefined) tex.colorSpace = THREE.SRGBColorSpace;
+    const sp = new THREE.Sprite(
+      new THREE.SpriteMaterial({ map: tex, transparent: true, depthTest: false }));
+    sp.scale.set(0.5, 0.5, 1);
+    return sp;
+  }
+
   setModel(model) {
     Object.assign(this.model, model);
     if (!this.ready) return;
     this._syncThemeBg();
     if (model.widthM !== undefined) this._buildRoom(model.widthM);
-    const amps = this.model.amplitudes;
-    if (amps && amps.length) {
-      let lo = Math.min(...amps), hi = Math.max(...amps);
-      if (!(hi > lo)) hi = lo + 1;
-      const attr = this.field.geometry.attributes;
-      const pos = attr.position, col = attr.color;
-      for (let i = 0; i < pos.count; i++) {
-        const seg = Math.min(amps.length - 1,
-          Math.floor(((pos.getX(i) + 2) / 4) * amps.length));
-        const t = (amps[seg] - lo) / (hi - lo);
-        // cyan → red ramp
-        col.setXYZ(i, 0.2 + 0.8 * t, 0.75 - 0.55 * t, 0.85 - 0.45 * t);
+    const pn = model.nodes;
+    if (pn !== undefined) {
+      // Per-node layer: each strip paints ONLY its own node's vector.
+      // Stale slots ride dimmed (opacity 0.15) with STALE in the HUD —
+      // never presented as current. The legacy single strip shows only
+      // while neither node has frames.
+      const aLive = pn && pn.A && pn.A.amplitudes && pn.A.amplitudes.length;
+      const bLive = pn && pn.B && pn.B.amplitudes && pn.B.amplitudes.length;
+      if (aLive) this._paintStrip(this.field, pn.A, RfLinkScene.RAMP_A);
+      if (aLive || bLive) this.field.visible = Boolean(aLive);
+      // Neither node live: leave the last captured strip untouched (same
+      // "last state for reference" semantics as before).
+      if (bLive) {
+        this._ensureFieldB();
+        this._paintStrip(this.fieldB, pn.B, RfLinkScene.RAMP_B);
+      } else if (this.fieldB) {
+        this.fieldB.visible = false;
       }
-      col.needsUpdate = true;
+      // Phase 2: per-node thermal overlay from each node's OWN disturb
+      // vector (painted in place on the existing setModel path — no new
+      // loop). A slot without a disturb vector contributes no thermal layer.
+      // Neither node live: last thermal state stays for reference (same as
+      // strips); stale slots ride dimmed via _paintThermal.
+      const aTherm = aLive && pn.A.disturb && pn.A.disturb.length;
+      const bTherm = bLive && pn.B.disturb && pn.B.disturb.length;
+      if (aTherm || bTherm) this._ensureThermal();
+      if (aTherm) {
+        this._paintThermal(this.thermalA, pn.A);
+      } else if (this.thermalA) {
+        this.thermalA.visible = false;
+      }
+      if (bTherm) {
+        this._paintThermal(this.thermalB, pn.B);
+      } else if (this.thermalB) {
+        this.thermalB.visible = false;
+      }
+    } else {
+      const amps = this.model.amplitudes;
+      if (amps && amps.length) {
+        let lo = Math.min(...amps), hi = Math.max(...amps);
+        if (!(hi > lo)) hi = lo + 1;
+        const attr = this.field.geometry.attributes;
+        const pos = attr.position, col = attr.color;
+        for (let i = 0; i < pos.count; i++) {
+          const seg = Math.min(amps.length - 1,
+            Math.floor(((pos.getX(i) + 2) / 4) * amps.length));
+          const t = (amps[seg] - lo) / (hi - lo);
+          // cyan → red ramp
+          col.setXYZ(i, 0.2 + 0.8 * t, 0.75 - 0.55 * t, 0.85 - 0.45 * t);
+        }
+        col.needsUpdate = true;
+      }
     }
+    // Phase 3: coarse 3-zone approximate RF evidence overlay. Visibility is
+    // decided inside _paintZoneField — only an RF_ESTIMATE field renders;
+    // null / lower tiers / missing markers hide the group, so a reset or
+    // stale state can never leave a spatial claim on screen.
+    if (model.field !== undefined) this._paintZoneField(model.field);
     const t = this.model.positionT, u = this.model.uncertainty;
     const show = (t !== null && t !== undefined);
     this.posMarker.visible = show;
@@ -242,6 +582,9 @@ export class RfLinkScene {
 
   destroy() {
     this.ready = false;
+    try { this._clearRoomImage(); } catch { /* already torn down */ }
+    try { this._clearThermal(); } catch { /* already torn down */ }
+    try { this._clearZoneField(); } catch { /* already torn down */ }
     window.removeEventListener("resize", this._onResize);
     this.renderer?.dispose();
     this.container.innerHTML = "";

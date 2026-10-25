@@ -2,7 +2,7 @@
    Teammate UI (rf-vision-web) is the visual source of truth: night palette,
    card surfaces, icon rail, page headers, pills, buttons, radii, spacing.
    RFVISION React + backend remain the functional source of truth.
-   Scoped to .rfreact / body of the /react page only: the legacy console at /
+   Scoped to .rfreact / body of the /react page only: the legacy console at /legacy
    shares tokens.css but none of these rules, so it cannot be affected. */
 
 .rfreact, .rfreact *, .rfreact *::before, .rfreact *::after { box-sizing: border-box; }

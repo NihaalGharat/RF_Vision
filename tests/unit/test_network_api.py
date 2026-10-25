@@ -23,11 +23,12 @@ def _discover(state="NETWORK_DETECTED", ctx=None, reason="ok"):
 
 
 def _dual_info(bssid="aa:bb:cc:dd:ee:ff", channel=6, valid=10,
-               source_state="LIVE_VERIFIED", sync="SYNCED"):
+               source_state="LIVE_VERIFIED", sync="SYNCED", stale=False):
     def node(nid):
         return {"node_id": nid, "board_mac": "b0:3f:d3:70:20:3c",
                 "port": "/dev/ttyUSB0", "source_state": source_state,
-                "stream": {"valid": valid, "rate_hz": 75.0},
+                "stream": {"valid": valid, "rate_hz": 75.0,
+                           "stale": stale},
                 "signal": {"bssid": bssid, "channel": channel},
                 "timing": {}, "sync": {"ready": sync == "SYNCED"}}
     return {"nodes": ("esp32-a", "esp32-b"), "elapsed_s": 5.0,
@@ -97,6 +98,44 @@ def test_readiness_rejects_wrong_network_nodes(monkeypatch):
         dual_info=_dual_info(bssid="ff:ee:dd:cc:bb:aa"))
     assert payload["state"] == "CSI_UNAVAILABLE"
     assert payload["rf_ready"] is False
+
+
+def test_readiness_stale_nodes_never_reach_rf_ready(monkeypatch):
+    for stale in ("esp32-a", "esp32-b", "both"):
+        monkeypatch.setattr(network_api, "_last_network", None)
+        info = _dual_info()
+        if stale in ("esp32-a", "both"):
+            info["per_node"]["esp32-a"]["stream"]["stale"] = True
+        if stale in ("esp32-b", "both"):
+            info["per_node"]["esp32-b"]["stream"]["stale"] = True
+        payload = network_api.rf_readiness_payload(
+            discover=_discover(ctx=_ctx()), dual_info=info)
+        assert payload["state"] == "CSI_UNAVAILABLE"
+        assert payload["rf_ready"] is False
+        assert "fresh" in payload["reason"]
+
+
+def test_readiness_no_valid_observations_withhold_ready(monkeypatch):
+    monkeypatch.setattr(network_api, "_last_network", None)
+    info = _dual_info(valid=0)
+    payload = network_api.rf_readiness_payload(
+        discover=_discover(ctx=_ctx()), dual_info=info)
+    assert payload["state"] == "CSI_UNAVAILABLE"
+    assert payload["rf_ready"] is False
+
+
+def test_readiness_recovers_after_fresh_data_returns(monkeypatch):
+    monkeypatch.setattr(network_api, "_last_network", None)
+    info = _dual_info(stale=True)
+    stale = network_api.rf_readiness_payload(
+        discover=_discover(ctx=_ctx()), dual_info=info)
+    assert stale["rf_ready"] is False
+    info["per_node"]["esp32-a"]["stream"]["stale"] = False
+    info["per_node"]["esp32-b"]["stream"]["stale"] = False
+    fresh = network_api.rf_readiness_payload(
+        discover=_discover(ctx=_ctx()), dual_info=info)
+    assert fresh["state"] == "RF_READY"
+    assert fresh["rf_ready"] is True
 
 
 def test_readiness_no_session_reports_missing(monkeypatch):

@@ -505,13 +505,16 @@ def dual_status_payload() -> Dict[str, Any]:
         timing = node.get("timing", {})
         sync_n = node.get("sync", {})
         valid = int(stream.get("valid", 0))
-        if node.get("source_state") in ("LIVE_VERIFIED",):
+        source_state = node.get("source_state")
+        if source_state == "DISCONNECTED":
+            connection = "DISCONNECTED"
+        elif bool(stream.get("stale")):
+            connection = "DEGRADED"
+        elif source_state == "LIVE_VERIFIED":
             connection = ("SYNCED" if sync.get("state") == "SYNCED"
                           else "LIVE")
-        elif node.get("source_state") == "LIVE_UNVERIFIED":
+        elif source_state == "LIVE_UNVERIFIED":
             connection = "SYNCING"
-        elif node.get("source_state") == "DISCONNECTED":
-            connection = "DISCONNECTED"
         else:
             connection = "DEGRADED"
         entries.append(contracts.node_status_payload(

@@ -316,6 +316,12 @@ class LiveProvider:
             return "LIVE_VERIFIED"
         return "LIVE_UNVERIFIED"
 
+    @property
+    def fresh(self) -> bool:
+        """True when a valid observation exists and is within the STALE window."""
+        ts = self._last_valid_ts
+        return ts is not None and (time.time() - ts) <= self.stale_after_s
+
     def close(self) -> None:
         """Request session stop + release the port (idempotent)."""
         self._stop = True

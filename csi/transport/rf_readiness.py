@@ -10,8 +10,8 @@ RF READY requires ALL of:
 1. active network valid (NETWORK_DETECTED)
 2. network compatible (validated by ``NetworkContext.compatible``)
 3. every expected node reachable with verified identity
-4. CSI available on every expected node with expected BSSID/channel match
-5. acquisition healthy (per-node source_state LIVE_VERIFIED)
+4. CSI fresh on every expected node with expected BSSID/channel match
+5. acquisition healthy (per-node source_state LIVE_VERIFIED + fresh)
 6. synchronization healthy (dual mode: SYNCED; single mode: N/A)
 
 One healthy node out of two enters SINGLE-DEGRADED — never a silent
@@ -61,6 +61,7 @@ class NodeCheck:
     csi_available: bool = False
     bssid_match: bool = False
     channel_match: bool = False
+    fresh: bool = False  # valid observation inside existing STALE window
     source_verified: bool = False  # LIVE_VERIFIED acquisition gate
 
 
@@ -164,6 +165,11 @@ def evaluate_rf_readiness(
                 reason=f"{node.node_id} CSI not on expected network "
                        f"(BSSID/channel mismatch); wrong-network node "
                        f"rejected")
+        if not node.fresh:
+            return ReadinessResult(
+                state="CSI_UNAVAILABLE", rf_ready=False,
+                reason=f"no fresh CSI from {node.node_id} (outside the "
+                       f"existing STALE window); RF READY withheld")
         if not node.source_verified:
             return ReadinessResult(
                 state="CSI_UNAVAILABLE", rf_ready=False,

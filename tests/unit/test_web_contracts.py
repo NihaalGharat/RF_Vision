@@ -9,8 +9,11 @@ the XAI availability state. Stdlib only.
 from __future__ import annotations
 
 import json
+import os
 import re
+import shutil
 import socket
+import subprocess
 import unittest
 from pathlib import Path
 
@@ -328,6 +331,47 @@ class FrontendHygieneTests(unittest.TestCase):
         html = (self.STATIC / "index.html").read_text(encoding="utf-8")
         self.assertNotIn("https://", html, "index.html must not use CDNs")
         self.assertIn("/static/vendor/three.module.js", html)
+
+    def test_hardware_health_classifier_is_explicit(self):
+        candidates = (
+            os.environ.get("RFVISION_NODE_BIN"),
+            shutil.which("node"),
+            str(Path.home() / ".local" / "bin" / "node"),
+            str(Path.home() / ".local" / "node-p3" / "bin" / "node"),
+        )
+        node = next((c for c in candidates if c and Path(c).exists()), None)
+        if node is None:
+            self.skipTest("no Node.js runtime (RFVISION_NODE_BIN/PATH)")
+        hardware = (self.STATIC / "react" / "js" / "features"
+                    / "hardware.js")
+        text = hardware.read_text(encoding="utf-8")
+        self.assertIn("healthTone", text)
+        self.assertNotIn("/connect|online|live/i", text)
+        module = (self.STATIC / "react" / "js" / "features"
+                  / "hardwareHealth.js")
+        statuses = ["SYNCED", "LIVE", "SYNCING", "DEGRADED",
+                    "DISCONNECTED", "STANDBY", "", "CONNECTED", "UNKNOWN",
+                    "live"]
+        script = (
+            f"const m = await import({json.dumps(module.as_uri())});"
+            f"const s = {json.dumps(statuses)};"
+            "console.log(JSON.stringify(Object.fromEntries("
+            "s.map(v => [v, m.healthTone(v)]))));"
+        )
+        proc = subprocess.run(
+            [node, "--input-type=module", "-e", script],
+            capture_output=True, text=True, timeout=30)
+        self.assertEqual(proc.returncode, 0, proc.stderr[:2000])
+        tones = json.loads(proc.stdout)
+        for status in ("SYNCED", "LIVE", "live"):
+            self.assertEqual(tones[status], "healthy")
+        for status in ("SYNCING", "DEGRADED"):
+            self.assertEqual(tones[status], "degraded")
+        for status in ("DISCONNECTED", "STANDBY"):
+            self.assertEqual(tones[status], "unavailable")
+        for status in ("", "CONNECTED", "UNKNOWN"):
+            self.assertEqual(tones[status], "unknown")
+        self.assertNotEqual(tones["DISCONNECTED"], "healthy")
 
 
 if __name__ == "__main__":

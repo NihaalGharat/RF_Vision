@@ -14,6 +14,7 @@ import json
 import time
 import unittest
 from pathlib import Path
+from unittest import mock
 
 from web import contracts
 from web import source as sources
@@ -204,6 +205,43 @@ class StateTransitionTests(unittest.TestCase):
         stats = provider.live_stats()
         self.assertTrue(stats["stream"]["stale"])
         self.assertGreater(stats["stream"]["last_update_age_s"], 0.2)
+
+
+class FreshnessTests(unittest.TestCase):
+    def test_never_received_is_not_fresh(self):
+        provider = _provider([])
+        self.assertFalse(provider.fresh)
+
+    def test_fresh_uses_existing_stale_window_without_mutation(self):
+        provider = _provider([])
+        with mock.patch("web.source.time.time", return_value=100.0):
+            provider._last_valid_ts = 100.0
+            self.assertTrue(provider.fresh)
+        with mock.patch("web.source.time.time", return_value=103.0):
+            self.assertTrue(provider.fresh)  # boundary: stale uses ">"
+        with mock.patch("web.source.time.time", return_value=103.001):
+            self.assertFalse(provider.fresh)
+        self.assertEqual(provider._last_valid_ts, 100.0)
+        self.assertEqual(provider.source_state, "LIVE_UNVERIFIED")
+
+    def test_transport_death_after_valid_preserves_stale_window(self):
+        provider = sources.LiveProvider(
+            line_source=FakeLineSource(
+                _fixture_lines() + ["ready\n"], pace_s=0.02, raise_after=50,
+                raise_message="port gone"),
+            gate_window_s=0.5, frame_hz=50.0, settle_s=0.0)
+        list(provider.frames())
+        stats = provider.live_stats()
+        self.assertEqual(stats["transport"]["error"], "port gone")
+        self.assertGreater(stats["stream"]["valid"], 0)
+        self.assertEqual(provider.source_state, "LIVE_VERIFIED")
+        self.assertTrue(provider.fresh)
+        last = provider._last_valid_ts
+        with mock.patch("web.source.time.time", return_value=last + 3.0):
+            self.assertTrue(provider.fresh)
+        with mock.patch("web.source.time.time", return_value=last + 3.001):
+            self.assertFalse(provider.fresh)
+        self.assertEqual(provider.source_state, "LIVE_VERIFIED")
 
 
 class BufferingTests(unittest.TestCase):

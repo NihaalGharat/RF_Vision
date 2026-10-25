@@ -3,6 +3,20 @@
 All notable changes to the RF Vision foundation are recorded here.
 Format: `YYYY-MM-DD — summary`.
 
+## 2026-10-26 — Host truthfulness and live-visualization checkpoint
+
+- Checkpointed host RF readiness/freshness truthfulness: stale data can no
+  longer satisfy RF READY or SYNCED, and stale dual-node status maps to
+  DEGRADED with DISCONNECTED precedence.
+- Checkpointed dashboard/frontend progress: explicit node-health
+  classification, corrected legacy-console routing text, and per-node React
+  RF visualization (A/B routing, room backdrop, false-colour disturbance
+  overlay, and approximate evidence tiers, all labelled unvalidated).
+- Added focused Python/Node coverage; fresh full suite `278 passed`.
+- The uncommitted P1-like firmware lifecycle candidate in `app_main.c` is NOT
+  part of this checkpoint, remains unvalidated, and received no hardware test
+  or build. No validated sensing claim was added.
+
 ## 2026-09-21 — Integrated research foundation (RFVISION-FOUNDATION-002)
 
 - Initialized single authoritative repository (`~/Desktop/RF Vision`, `main`).

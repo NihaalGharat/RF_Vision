@@ -6,9 +6,17 @@ import { h, kv, unknown } from "../h.js";
 import { Card, ErrorRow, ModePill, PageHeader, RfReadyBadge } from "../components/global.js";
 import { SafeButton } from "../components/controls.js";
 import { api } from "../services/api.js";
+import { healthTone } from "./hardwareHealth.js";
 import { hardwareStore, sensingStore, sourceStore, useStore } from "../state/store.js";
 
 const R = window.React;
+
+const NODE_HEALTH_COLORS = {
+  healthy: "#34d399",
+  degraded: "#fbbf24",
+  unavailable: "#f87171",
+  unknown: "#94a3b8",
+};
 
 function esc(s) {
   return String(s == null ? "" : s);
@@ -86,8 +94,7 @@ export function HardwareView({ refresh }) {
           ? unknown(hw.nodes && hw.nodes.reason ? hw.nodes.reason : "STANDBY (dual session not started)")
           : h("ul", { className: "rfreact-rows", style: { listStyle: "none", margin: 0, padding: 0 } },
             nodeList.map((n) => {
-              const online = /connect|online|live/i.test(n.connection || "");
-              const color = online ? "#34d399" : "#f87171";
+              const color = NODE_HEALTH_COLORS[healthTone(n.connection)];
               return h("li", { key: n.node_id, className: "rfreact-divrow" },
                 h("div", { style: { minWidth: 0 } },
                   h("p", { className: "rfreact-linetitle" }, n.node_id),
