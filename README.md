@@ -1,123 +1,181 @@
 # RF Vision
 
-A near-real-time RF sensing platform using Wi-Fi Channel State Information
-(CSI) for human presence detection, motion/activity recognition,
-localization, explainable AI, and 3D RF visualization.
+RF Vision is a working engineering prototype for real-time Wi-Fi Channel State
+Information (CSI) acquisition and visualization. Two ESP32 receivers stream CSI
+over USB serial into a local Python backend; a vendored React console shows
+measured A/B activity and an illustrative 3D RF presentation.
 
-**Status: engineering foundation (no validated sensing claims yet).**
-This repository contains the integrated acquisition + processing + ML +
-realtime codebase assembled from audited open-source components, plus the
-native interfaces (data schema, event protocol, Unity bridge, experiment
-framework) for the research phases ahead. See
-`docs/research/SCIENTIFIC_VALIDATION_STATUS.md` — upstream accuracy claims
-were deliberately NOT inherited.
+**Status: demo-ready engineering checkpoint with zero validated sensing
+claims.** Real dual-receiver CSI acquisition and live A/B visualization are
+verified. Human-presence association remains exploratory, and no validated
+presence/activity classifier, coordinates, trajectory, pose, obstacle detection,
+localization, or reconstructed geometry exists. See
+[`docs/research/SCIENTIFIC_VALIDATION_STATUS.md`](docs/research/SCIENTIFIC_VALIDATION_STATUS.md).
 
-## Hardware baseline (validated, do not replace without a migration plan)
+## What it does now
 
-- Xiaomi Mi Router 4C/R4CM (2.4 GHz) + ESP32-D0WD-V3 (`csi_recv_router`)
-- ESP-CSI @ `8633d671` · ESP-IDF v5.4.4 · Ubuntu · USB serial @ 921600 8N1
-- Details: `docs/hardware/BASELINE.md`, `firmware/esp32/csi_recv_router/`
+- Captures real CSI from two ESP32-D0WD-V3 receivers over USB serial.
+- Synchronizes the two node streams on the host and exposes explicit
+  `LIVE_VERIFIED`, `SYNCED`, and `RF_READY` states.
+- Delivers independent A/B CSI frames to Live Sensing and Visualization; this
+  was verified in a prior live browser session.
+- Shows live amplitude, RSSI, validity, per-node activity history, and a 3D
+  room presentation. Reference View waves and room geometry are **illustrative**,
+  not measured time-of-flight or surveyed geometry.
+- Supports explicit, bounded raw-CSI recording and audio-guided research trials.
+- Recovers WebSocket connections indefinitely with capped backoff; the previous
+  reconnect-budget exhaustion is corrected.
+- Serializes recording finalization so a stop during auto-stop cannot publish
+  `bytes=0` / `sha256=null` for a nonempty file. The historical correction for
+  `WT-20261029T193657Z` remains append-only and unchanged.
 
-## Architecture
+### Scientific boundary
+
+- **Verified:** dual ESP32 CSI acquisition, backend synchronization/readiness,
+  and live measured A/B delivery.
+- **Observed:** relative RF activity changes in some sessions.
+- **Exploratory:** association between RF changes and a human in the path.
+- **Illustrative:** Reference View room and wave animation.
+- **Not validated:** human detection, tracking, coordinates, pose, obstacle
+  detection, obstacle localization, and reconstruction.
+
+Two audio-guided `Nihaal` human-presence trials were completed
+(`WT-20261029T194753Z` primary, `WT-20261029T193657Z` supplementary). Event
+timing and reference quality remain limited. The VCET reference trial
+`WT-20261029T121111Z` parsed to 11,027 A / 11,559 B CSI vectors; the older
+9,071 / 9,517 metadata values are cumulative source counters, not trial totals.
+Obstacle reconstruction and new sensing features are deferred until after the
+demonstration.
+
+## Hardware architecture
 
 ```
-ESP32 → CSI capture → transport → parser → validation → dsp →
-features → sensing → localization → ai/xai → realtime → dashboard/Unity
+2.4 GHz Wi-Fi AP
+   ├── ESP32-A receiver (ESP32-D0WD-V3, csi_recv_router firmware)
+   └── ESP32-B receiver (ESP32-D0WD-V3, csi_recv_router firmware)
+             │
+             └── USB serial @ 921600 8N1 → host backend → browser
 ```
 
-Full subsystem docs (purpose, inputs/outputs, maturity, limits):
-`docs/architecture/RFVISION_ARCHITECTURE.md`.
-Canonical data interfaces: `docs/architecture/RFVISION_DATA_SCHEMA.md`.
+The validated router baseline is documented in
+[`docs/hardware/BASELINE.md`](docs/hardware/BASELINE.md). An operator-provided
+2.4 GHz hotspot is also supported for field sessions. The ESP32 nodes are
+receivers; the AP is not a second sensing receiver. Firmware remains the
+validated `firmware/esp32/csi_recv_router/` build (ESP-IDF v5.4.4); no flashing
+is part of this checkpoint.
 
-## Repository layout
+## Software components
 
-| Path | Contents |
+| Path | Role |
 |---|---|
-| `firmware/` | Validated ESP32 firmware (untouched) + reference generator + protocol notes |
-| `csi/` | Capture, parser (+ESP-CSV adapter), validation, transport, wire-format specs |
-| `dsp/` | Preprocessing, amplitude, phase (gated), filtering, 180-d features |
-| `sensing/` | Presence / motion / activity / state + realtime inference engine |
-| `localization/` | Calibration, geometry, 1-D positioning seed, tracking, sync helpers |
-| `ai/` | Datasets, training (KNN/RF/MLP), inference API, evaluation, XAI foundation |
-| `realtime/` | Serial streaming, live app entry, versioned JSON event protocol |
-| `visualization/` | Qt dashboard, RF reference viewer, digital-twin interface |
-| `unity/` | Project scope + Unity integration message formats (foundation only) |
-| `experiments/` | Protocols, metadata schema, config overrides, analysis notes |
-| `config/` | Central `default.yaml` + settings loader |
-| `tools/` | Headless raw-CSI recorder |
-| `tests/` | Unit + integration + synthetic generators + fixtures |
-| `docs/` | Architecture, hardware, software, research, third-party, background |
-| `research/` | Dataset manifests, reports, publication staging (no raw data in git) |
-| `research-data/` | Canonical research data: raw CSI + derived sets (**Git-ignored**; see below) |
+| `web/` | Local Python stdlib HTTP + WebSocket backend and vendored React console |
+| `web/source.py` | Off/fixture/simulated/live providers, CSI envelope generation, recording lock |
+| `web/dual_node.py` | Two-node session, host timestamps, synchronization |
+| `web/network.py` | Network discovery, password-safe provisioning, RF readiness |
+| `web/trials.py` | Bounded trial recorder and metadata finalization |
+| `web/vision.py` | Conservative per-node engineering evidence |
+| `sensing/` | Presence/motion/activity/state inference and reference tracker |
+| `csi/`, `dsp/` | CSI parsing, validation, transport, preprocessing, features |
+| `localization/`, `ai/`, `realtime/`, `visualization/` | Research foundations |
+| `tests/` | Unit, integration, contract, and browser-driver regression coverage |
+| `research-data/` | Local raw CSI and derived data, Git-ignored |
+| `docs/` | Architecture, hardware, research, development, and provenance |
 
-> `dsp/` implements the `signal/` block of the target architecture. It was
-> renamed because a top-level `signal` package irreversibly shadows Python's
-> stdlib `signal` module (breaks joblib/pytest). See `dsp/README.md`.
+The frontend is vendored and needs no Node/npm build step. The backend binds to
+`127.0.0.1` only and is intended for a single local operator.
 
-## Research data
+## Web application sections
 
-Location: `research-data/`
+The React console has five hash-routed sections:
 
-"Raw and large derived research datasets are intentionally excluded
-from Git history."
+- `#/live` — live frame validity, A/B health, and measured signal charts.
+- `#/visualize` — per-node measured activity history and illustrative 3D room.
+- `#/hardware` — network inspection/provisioning, dual-session control, RF READY.
+- `#/research` — bounded recording, checksums, trial state, and analysis context.
+- `#/system` — health, WebSocket state, appearance, and safety boundaries.
 
-- `research-data/MANIFEST.md` — every dataset file with size, SHA-256,
-  experiment/provenance, source and original location (tracked in Git).
-- Verify with `sha256sum -c <file>.sha256` sidecars, or the full-tree check
-  in `research-data/README.md`.
-- Reproduce analysis from the read-only raw captures using the current
-  `csi/` + `dsp/` chain; technique reference (not active code) is in
-  `docs/research/legacy/TOOL-REFERENCE.md`.
+The preserved legacy console is available at `/legacy`; `/` serves the current
+React console.
 
-## Setup (Linux)
+## Supported development environment
+
+- Ubuntu Linux; verified on Ubuntu 26.04.1 with Python 3.14.4.
+- Python with the `requirements-base.txt` stack (numpy, scipy, pandas,
+  scikit-learn, matplotlib, PyYAML, joblib, pyserial).
+- No Node/npm build step; the React and Three.js assets are vendored.
+- Google Chrome for the browser-tested UI (verified with Chrome 156).
+- ESP-IDF v5.4.4 only for firmware builds; not required to run the web console.
+
+Full environment details:
+[`docs/development/DEVELOPMENT_ENVIRONMENT.md`](docs/development/DEVELOPMENT_ENVIRONMENT.md).
+
+## Setup and startup
 
 ```bash
 git clone https://github.com/NihaalGharat/RF_Vision.git
 cd RF_Vision
+/usr/bin/python3 -m pip install -r requirements-dev.txt
 ./tools/run_rfvision_ui.sh
 ```
 
-Interactive RF console (local-only): `http://127.0.0.1:8130/`
-(tabs: Overview, Sensing, RF Field, Hardware, Localization, XAI,
-Experiments, Settings). Python dependencies:
+Open `http://127.0.0.1:8130/`. The launcher accepts an optional port and pins
+the system Python used by the verified environment; override it with
+`RFVISION_PYTHON=/path/to/python3` if needed. The equivalent direct command is:
 
 ```bash
-pip install -r requirements-base.txt        # capture → features → sensing → sklearn ML
-pip install -r requirements-gui.txt         # live Qt dashboard (optional)
-pip install -r requirements-ml.txt          # PyTorch MLP (optional, CPU)
-pip install -r requirements-dev.txt         # pytest etc.
+python3 -m web.server --port 8130
 ```
 
-Firmware build (unchanged baseline, ESP-IDF v5.4.4):
-see `firmware/esp32/csi_recv_router/README.md`. No flashing is part of
-foundation work.
+Optional extras: `requirements-gui.txt` for the Qt dashboard and
+`requirements-ml.txt` for the PyTorch MLP. Neither is required for the web demo.
 
-## Running tests
+## Testing
 
 ```bash
-python3 -m pytest tests/ -q        # 128 tests, stdlib+numpy+sklearn, no hardware
+python3 -m pytest tests/ -q
 ```
 
-Headless realtime inference (needs the ESP32 on USB):
+Current verified regression: **325 passed** on the Python suite. Focused
+recorder/WebSocket coverage: 12 passed. Offline browser smoke: **13/13** checks
+across all five routes, using synthetic fixtures (UI plumbing only). No test
+requires hardware.
+
+Hardware-dependent commands are documented but are not part of the test gate:
+
 ```bash
 python3 -m sensing.inference_engine --port /dev/ttyUSB0
+python3 -m tools.csi_record --port /dev/ttyUSB0 --duration 60
 ```
-Raw capture without parsing: `python3 tools/csi_record.py --port /dev/ttyUSB0 --duration 60`
-Live GUI: `python3 realtime/server/live_app.py` (requires `requirements-gui.txt`)
 
-## Research status / known limitations
+The operator sequence and honest fallback wording are in
+[`docs/development/DEMO_RUNBOOK.md`](docs/development/DEMO_RUNBOOK.md).
 
-- Acquisition validated on the baseline path; everything downstream is
-  **NOT YET VALIDATED** (session-split evaluation is the minimum bar).
-- Position is 1-D `[0,1]` along the link; 2-D/3-D, multi-node sync, XAI,
-  digital twin, and Unity scenes are interface-level foundations, not products.
-- Phase features are gated OFF by default (ESP32 per-packet offset).
-- Full limitation register: `docs/research/SCIENTIFIC_VALIDATION_STATUS.md`.
+## Research data and evidence
 
-## Provenance & licenses
+Raw CSI and derived research data live under `research-data/`, which is
+Git-ignored. Detailed trial evidence bundles, browser screenshots, and live
+logs are also retained locally and intentionally not published because they
+contain environment-specific diagnostics and identifiers. They are not an
+independent off-device backup.
 
-All third-party code is attributed in `THIRD_PARTY_NOTICES.md` with
-per-file provenance in `docs/third_party/SOURCE_PROVENANCE.md`.
-RF Vision native code is MIT (`LICENSE`; copyright-holder line to be
-confirmed — see implementation report). `thkimKETI/csi-sensing` was
-studied but **no code was taken** (restrictive view-only license).
+- `research-data/MANIFEST.md` records local dataset sizes and SHA-256 values.
+- Verify sidecars with `sha256sum -c <file>.sha256`.
+- Do not convert residual-energy ratios into accuracy, confidence, or
+  probability claims.
+
+## Documentation
+
+- [Architecture](docs/architecture/RFVISION_ARCHITECTURE.md)
+- [Data schema](docs/architecture/RFVISION_DATA_SCHEMA.md)
+- [Hardware baseline](docs/hardware/BASELINE.md)
+- [Development environment](docs/development/DEVELOPMENT_ENVIRONMENT.md)
+- [Demo runbook](docs/development/DEMO_RUNBOOK.md)
+- [Scientific validation status](docs/research/SCIENTIFIC_VALIDATION_STATUS.md)
+- [Dependencies](docs/software/DEPENDENCIES.md)
+- [Third-party notices](THIRD_PARTY_NOTICES.md)
+
+## Provenance and licenses
+
+All third-party code is attributed in `THIRD_PARTY_NOTICES.md`, with per-file
+provenance in `docs/third_party/SOURCE_PROVENANCE.md`. RF Vision native code is
+MIT (`LICENSE`). `thkimKETI/csi-sensing` was studied but no code was taken.

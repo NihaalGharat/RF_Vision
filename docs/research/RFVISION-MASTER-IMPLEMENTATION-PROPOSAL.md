@@ -195,6 +195,147 @@ constants (until P2 flag), frozen `RFVISION-011*` / `PRESENCE-PILOT*`,
 - *Provisioning path:* deferred to decision checkpoint; blocks
   multi-network research regardless of downstream readiness.
 
+## 13. Environmental Reference & Obstacle-Sensing Roadmap (2026-10-29)
+
+Planning update only. This section adds the environmental-reference track; it
+does not supersede the earlier proposal status. No source, API, model, firmware,
+hardware, network, trial, or evidence file was changed. Baseline:
+`feature/rfvision-validated-react-ui` @ `b698e07`; offline suite last reported
+`319 passed`; reference diagnostics focused suite `12 passed` during this
+inspection.
+
+Binding rule: **IMPLEMENTED ≠ OFFLINE_VERIFIED ≠ LIVE_VERIFIED ≠
+SCIENTIFICALLY_VALIDATED**. No RF difference is obstacle detection, and no
+current capability reconstructs room geometry.
+
+### 13.1 Proven existing support
+
+- Per-node measured CSI amplitude vectors already reach the frontend in
+  `sensing.snapshot.payload.amplitudes`; A/B routing and isolation already
+  exist.
+- `sensing/reference.py` implements explicit `capture()`, `evaluate()`,
+  `reset()`, robust per-tone median/MAD statistics, gain/structural residual
+  separation, coverage checks, and `ABSENT/IMMATURE/INVALID/STALE/VALID`.
+- `/api/v1/nodes` exposes node identity, MAC, port, observed BSSID/channel,
+  tone count, validity, rates, gaps, and connection/source state.
+- `LiveProvider.live_stats()` does expose `session_id`, but the node contract
+  does not currently publish it; `GET /api/v1/experiment` reports
+  `NO_ACTIVE_SESSION` during dual operation.
+- The reference tracker is not connected to an API, runtime capture action,
+  frontend, inference, or persistence. `/api/v1/nodes` has no session ID,
+  expected BSSID/channel, tone-layout fingerprint, or reference state.
+
+### 13.2 Decision table
+
+| Requirement | Existing support | Proven gap | Minimum change (if later authorized) | Risk | Test |
+|---|---|---|---|---|---|
+| Measured A/B amplitude vectors | `payload.amplitudes` per node, existing A/B isolation | None for current 62/64-tone path | None | Low | Existing routing + contract tests |
+| Robust reference statistics | `ReferenceTracker.capture/evaluate`, offline real-capture analysis | No runtime path | Reuse module; do not reimplement in JS | Medium | Existing 12 reference tests + malformed/stale cases |
+| Explicit reference capture | Offline `capture()` only | No operator action, bounded window, or capture state | Add explicit capture-only state and window | Medium | Valid/insufficient/duplicate capture tests |
+| Session identity | `session_id` in provider stats | Omitted from `/api/v1/nodes`; experiment is `NO_ACTIVE_SESSION` in dual | Additive session ID to node payload | Medium | Contract + cross-session invalidation tests |
+| Network identity | Observed BSSID/channel per node; `/api/v1/network` target | No expected/observed pair on node payload | Add observable expected/observed provenance | Medium | Network-change invalidation tests |
+| Tone configuration | Tone count only | No exact tone-layout/config fingerprint | Expose existing config identity if available; otherwise count/shape guard plus limitation | Medium | Incompatible-shape/config rejection |
+| Current-vs-reference difference | `evaluate()` offline | No API/UI or operator-visible result | Single read-only comparison path bound to capture provenance | High | A/B independence, gain, coverage, invalid/stale |
+| Stale/disconnected gating | Connection/source-state/freshness exist | Not bound to reference lifecycle | Gate comparison and require recapture | Low | Stale/disconnected tests |
+| Obstacle detection | None | No ground truth or controlled trials | M3 experiments only; no threshold/classifier | High | Operator-confirmed trial-level evaluation |
+| Spatial localization | Coarse uncalibrated zones only | No validated position estimate | M4 known-position study; may remain blocked | High | Held-out uncertainty/repeatability |
+| Geometric reconstruction | Illustrative scene only | No validated spatial evidence | M5 deferred | High | No mesh without validated evidence |
+
+### 13.3 Stage gates
+
+#### M1 — Environmental baseline capture
+
+Status: `OFFLINE_VERIFIED` (robust capture/evaluation statistics only; runtime
+operator capture is deferred).
+
+Goal: capture one bounded reference window from measured CSI, with no silent
+first-frame baseline.
+
+Required provenance where available: node ID/MAC, session ID, SSID/BSSID/
+channel, CSI tone configuration, capture start/end and window, valid sample
+counts, tone coverage, and signal quality.
+
+Acceptance gate: explicit operator action; bounded window (start with 10–30 s);
+at least 16 comparable vectors and 50% usable tones per node; identical vector
+shape/tone layout; no mixed session/network/node; immutable capture; explicit
+`ABSENT/IMMATURE/INVALID/STALE/VALID`; insufficient or incompatible references
+are rejected, not degraded into a comparison.
+
+Current blocker: no runtime capture path or session/tone-layout provenance in
+the node contract. `ReferenceTracker` must not be auto-attached to live frames.
+
+#### M2 — Environmental RF change detection
+
+Status: `PLANNED` (comparison maths exists offline; no runtime/UI integration).
+
+Goal: when a valid compatible reference exists, show independent A/B
+current-versus-reference gain, structural disturbance, disturbed-tone fraction,
+coverage, reference age, and state. Display no result when incompatible.
+
+Acceptance gate: same node/session/network/tone layout; exact shape; coverage
+threshold; stale/invalid explicitly neutral; A/B storage and rendering
+independent; no detection threshold, classifier, position, or geometry; explicit
+recapture after invalidation.
+
+Boundary: a difference is “environmental RF change”, never “obstacle detected”.
+
+#### M3 — Controlled obstacle validation
+
+Status: `PLANNED`.
+
+Goal: determine repeatability and false-alarm behaviour under operator-
+confirmed ground truth.
+
+Required trials: stable baseline; object introduction; object removal;
+no-change control; human movement; fan/environmental interference. Repeat
+trials, record fixed geometry/conditions, and evaluate at trial level on
+held-out data. No detection claim before this gate.
+
+#### M4 — Spatial localization feasibility
+
+Status: `PLANNED`; current validated 3-D localization capability is `BLOCKED`.
+
+Goal: test whether the available amplitude-only two-receiver CSI supports any
+defensible object-position estimate. Require known-position experiments,
+uncertainty estimates, repeatability, and held-out validation. Do not assume two
+amplitude-only links uniquely determine 3-D position; phase/arrays/more links
+would be a separate research decision.
+
+#### M5 — Geometric reconstruction
+
+Status: `BLOCKED`.
+
+Goal: render approximate obstacle geometry only after M3/M4 produce validated
+spatial evidence with stated uncertainty. Until then, no obstacle meshes,
+coordinates, or reconstructed room geometry may be generated or shown as
+measured.
+
+### 13.4 Cross-cutting rules
+
+- Preserve acquisition, parsing, synchronization, readiness, WebSocket,
+  recording schemas, models, and the current A/B activity-history presentation.
+- Invalidate references on incompatible session, node, network, tone layout, or
+  stale/disconnected input; require explicit recapture.
+- Keep references in-memory unless persistence is proven necessary for
+  correctness.
+- No synthetic CSI, fabricated reference values, inferred obstacle labels,
+  coordinates, shapes, or room geometry.
+- Any future runtime implementation must be additive, tested offline first, and
+  must stop if it threatens the VCET demonstration.
+
+### 13.5 Current decision
+
+`IMPLEMENTATION_DEFERRED`: the reference algorithm is offline-capable, but the
+runtime reference comparison is not demonstrably safe because session identity
+and exact tone-layout provenance are missing from the frontend contract, and
+there is no explicit capture API/window. Adding those plus a new comparison path
+before the VCET demonstration would exceed the permitted minimal-risk scope.
+
+Smallest justified next action: after VCET, add the additive per-node
+`session_id` plus expected/observed network and tone provenance to
+`/api/v1/nodes`, with contract and incompatibility tests, then reassess a
+capture-only reference path.
+
 ---
 
 **Awaiting approval:** (1) proceed with P0 verification + commit-or-revert?
@@ -202,3 +343,40 @@ constants (until P2 flag), frozen `RFVISION-011*` / `PRESENCE-PILOT*`,
 PLAN → IMPLEMENT → VERIFY → REVERIFY → REGRESSION → REPORT per slice.
 Final completion condition per directive §21:
 `RF VISION TASK VERIFIED — READY FOR NEXT APPROVED TASK`.
+
+## 14. Latest factual status addendum (2026-10-30)
+
+Documentation-only status update; it does not approve implementation and does
+not supersede the environmental-reference deferral.
+
+- Baseline: `feature/rfvision-validated-react-ui` @
+  `b698e079888717147210102afd49e8fc72d1efd5`; current checkpoint adds the
+  verified source, tests, and documentation on top of that baseline.
+- Real dual-ESP32 CSI acquisition, host synchronization, and `RF_READY` were
+  verified in a prior live session. Independent A/B CSI delivery to Live
+  Sensing and Visualization was verified in a prior live browser session; this
+  checkpoint did not run a new hardware trial.
+- WebSocket reconnect-budget exhaustion is corrected with indefinite capped
+  backoff. The recording-finalization race was reproduced and corrected with a
+  narrow lock; regression coverage compares metadata bytes/SHA against raw
+  files.
+- Verification: full Python suite **325 passed**; focused recorder/WebSocket
+  suite **12 passed**; offline browser smoke **13/13** across the five React
+  routes. These are engineering checks, not a new scientific validation.
+- VCET reference trial `WT-20261029T121111Z`: raw parse yielded **11,027 A /
+  11,559 B** CSI vectors. The `9,071`/`9,517` values in the original metadata
+  were cumulative source counters, not trial totals. The later channel-6 live
+  session is distinct from that channel-11 reference session; identifiers are
+  retained only in local evidence.
+- Two audio-guided `Nihaal` human-presence trials were completed
+  (`WT-20261029T194753Z`, `WT-20261029T193657Z`). Relative RF activity was
+  observed; human-presence association remains exploratory. Event timing and
+  reference quality remain limiting. The supplementary trial's original
+  ESP32-B metadata discrepancy is preserved with an append-only correction;
+  no historical value was silently repaired.
+- Boundary: Reference View waves and room geometry are illustrative. Human
+  detection/tracking, coordinates, pose, obstacle detection, obstacle
+  localization, and reconstruction are not validated. Obstacle reconstruction
+  and new sensing features are deferred until after the demonstration.
+- Detailed evidence bundles, raw CSI, logs, screenshots, and recovery snapshots
+  are local-only; do not publish environment-identifying material.

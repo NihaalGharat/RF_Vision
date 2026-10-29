@@ -3,6 +3,27 @@
 All notable changes to the RF Vision foundation are recorded here.
 Format: `YYYY-MM-DD — summary`.
 
+## 2026-10-30 — Pre-demo stabilization checkpoint
+
+- Fixed the recording-finalization race with a narrow re-entrant lock around
+  recording start, write, auto-stop, checksum, and manifest publication.
+  Regression coverage now compares metadata bytes/SHA against the raw files.
+- WebSocket reconnect-budget exhaustion is corrected with indefinite capped
+  backoff; Live uses the actual WebSocket service state.
+- Preserved the verified dual-ESP32 CSI to Live/Visualize baseline and the
+  conservative dual-node presentation. Reference View remains illustrative.
+- Consolidated the scientific boundary: acquisition and live measured A/B
+  delivery verified; relative RF activity observed; human-presence association
+  exploratory; detection/tracking/coordinates/pose/obstacle/localization/
+  reconstruction not validated.
+- Recorded two audio-guided `Nihaal` human-presence trials and the VCET
+  reference trial correction (`11,027` A / `11,559` B vectors; former
+  `9,071`/`9,517` values were cumulative counters).
+- Added the operator demo runbook and updated setup/status documentation.
+- Verification: **325 passed** Python regression, 12 focused recorder/WebSocket
+  tests, 13/13 offline browser checks, compile and diff checks clean. No new
+  hardware trial and no new live-hardware acceptance claim.
+
 ## 2026-10-26 — Host truthfulness and live-visualization checkpoint
 
 - Checkpointed host RF readiness/freshness truthfulness: stale data can no

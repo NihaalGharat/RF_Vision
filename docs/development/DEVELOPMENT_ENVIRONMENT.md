@@ -1,7 +1,8 @@
 # RF Vision Development Environment (RFVISION-011)
 
 Ubuntu 26.04.1 LTS, kernel 7.0.0-31-generic, x86_64.
-Login user is in the `dialout` and `sudo` groups (serial + admin access).
+Serial access requires membership in the `dialout` group; administrative
+actions require separate explicit approval.
 
 ## Python
 
@@ -33,9 +34,8 @@ Login user is in the `dialout` and `sudo` groups (serial + admin access).
 
 ## Git remote
 
-- Remote `origin`: `https://github.com/OWNER/REPO.git`
-  (exact value recorded in `/tmp/rfvision-011-setup-report.md`;
-  HTTPS only, never SSH)
+- Remote `origin`: `https://github.com/NihaalGharat/RF_Vision.git`
+  (HTTPS only; no SSH keys are stored in the repository)
 - Read-only verification: `git ls-remote origin HEAD`
 - Workflow: `git status --short --branch`, `git pull --ff-only`,
   `git push` (never `--force`, never rebase `main`)
@@ -59,13 +59,15 @@ Login user is in the `dialout` and `sudo` groups (serial + admin access).
 
 ## Browser
 
-- Google Chrome 153 (primary). No extensions required.
+- Google Chrome 156 (primary). No extensions required.
 
 ## RF Vision web UI (local-only)
 
-- Architecture (unchanged, RFVISION-009): Python stdlib `http.server`
-  + hand-rolled WebSocket + vendored Three.js r160. No React/Next/
-  FastAPI/Node/Electron/Docker.
+- Architecture: Python stdlib `http.server` + hand-rolled WebSocket backend,
+  vendored React console, and vendored Three.js r160. No build step, npm,
+  FastAPI, Electron, or Docker.
+- Five hash-routed React sections: `#/live`, `#/visualize`, `#/hardware`,
+  `#/research`, `#/system`. The preserved legacy console is at `/legacy`.
 - Binds **127.0.0.1 only**, port **8130**. Never `0.0.0.0`/LAN/public
   without separate approval.
 - Launch from the repository root: `./tools/run_rfvision_ui.sh [port]`
@@ -73,11 +75,15 @@ Login user is in the `dialout` and `sudo` groups (serial + admin access).
 - Health check: `python3 -c "import urllib.request;
   print(urllib.request.urlopen(
   'http://127.0.0.1:8130/', timeout=10).status)"` → `200`
-- Tests: `python3 -m pytest tests/ -q` (baseline: 128 passed)
+- Tests: `python3 -m pytest tests/ -q` (current baseline: **325 passed**).
+  Offline browser smoke is 13/13 across all five routes; it uses synthetic
+  fixtures and is not live sensing evidence.
 
-## Secrets policy
+## Secrets and evidence policy
 
 `.gitignore` excludes `.env`, `*password*`, `*secret*`, `*token*`,
 `*.pem`, raw data (`data/`, `*.csv`, `*.bin`), firmware build outputs,
-and research binaries. RFVISION-009 screenshots stay out of git
-(`/tmp` only; currently unavailable after reboot — INCONCLUSIVE).
+and research binaries. Detailed trial evidence bundles, browser screenshots,
+and live logs remain local-only and are not published. Raw CSI remains under
+the Git-ignored `research-data/`. No credential belongs in the repository or
+in documentation.
