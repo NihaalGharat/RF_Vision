@@ -19,19 +19,28 @@ export function SystemView({ refresh }) {
   return h("div", null,
     h(PageHeader, {
       eyebrow: "RF Vision", title: "System", back: true,
-      actions: [h(ModePill, { source: source.source, stale: false })],
+      actions: [h(ModePill, { source: source.source, stale: false, dual: source.dual })],
     }),
     h("div", { className: "rfreact-cols rfreact-cols-near" },
       h("div", { className: "rfreact-col" },
         h(Card, { label: "Backend", title: "Backend status" },
           health
-            ? kv([
-              ["health", health.status],
-              ["contract", `v${health.contract}`],
-              ["software", `web ${health.version}`],
-              ["source", `${health.source} · ${health.source_state}`],
-              ["uptime", `${Math.round(health.uptime_s)} s`],
-            ])
+            ? h("div", null,
+              kv([
+                ["health", health.status],
+                ["acquisition", source.dual
+                  ? `${source.dual.label} · ${source.dual.live}/${source.dual.expected} live`
+                  : `${health.source} · ${health.source_state}`],
+                ["uptime", `${Math.round(health.uptime_s)} s`],
+              ]),
+              h("details", { className: "rfreact-scene-options" },
+                h("summary", null, "Advanced — build, backend & session details"),
+                kv([
+                  ["contract", `v${health.contract}`],
+                  ["software", `web ${health.version}`],
+                  ["legacy source", `${health.source} · ${health.source_state}`],
+                  ["backend session", source.dual ? source.dual.label : "single-source / none"],
+                ])))
             : unknown(system.healthError ? `UNREACHABLE (${system.healthError})` : "loading…"),
           h("div", { className: "rfreact-row" },
             h(SafeButton, {
@@ -41,25 +50,28 @@ export function SystemView({ refresh }) {
           )),
         h(Card, { label: "Transport", title: "WebSocket status" },
           kv([
-            ["endpoint", "/ws/sensing (existing contract)"],
             ["state", WS_LABEL[system.wsState] || system.wsState],
           ]),
-          h("p", { className: "rfreact-note" },
-            "Same sensing contract as the legacy console: JSON text, 30 s ping, backoff reconnect. No new protocol.")),
+          h("details", { className: "rfreact-scene-options" },
+            h("summary", null, "Advanced — endpoint & protocol"),
+            kv([["endpoint", "/ws/sensing (existing contract)"]]),
+            h("p", { className: "rfreact-note" },
+              "JSON text, 30 s ping, indefinite backoff reconnect (capped at 30 s). No new protocol."))),
         h(Card, { label: "Display", title: "Appearance" },
-          h("div", { className: "rfreact-row" }, h(ThemeToggle, null)),
-          h("p", { className: "rfreact-note" }, "Shared preference key with the legacy console (rfvision-theme). UI preference only.")),
+          h("div", { className: "rfreact-row" }, h(ThemeToggle, null))),
       ),
       h("div", { className: "rfreact-col" },
-        h(Card, { label: "Boundary", title: "Safety — out of scope for this console" },
-          kv([
-            ["flash / erase / reset", "never"],
-            ["router changes", "never"],
-            ["live capture", "diagnostic only (explicit, bounded)"],
-            ["human experiments", "not in this phase"],
-            ["model training", "not in this phase"],
-            ["mock as live", "never — SIMULATION/FIXTURE always badged"],
-          ])),
+        h("details", { className: "rfreact-scene-options" },
+          h("summary", null, "Advanced — safety boundary"),
+          h(Card, { label: "Boundary", title: "Safety — out of scope for this console" },
+            kv([
+              ["flash / erase / reset", "never"],
+              ["router changes", "never"],
+              ["live capture", "diagnostic only (explicit, bounded)"],
+              ["human experiments", "not in this phase"],
+              ["model training", "not in this phase"],
+              ["mock as live", "never — SIMULATION/FIXTURE always badged"],
+            ]))),
       ),
     ));
 }

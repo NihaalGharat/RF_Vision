@@ -29,6 +29,7 @@ import hashlib
 import json
 import math
 import random
+import threading
 import time
 from pathlib import Path
 from typing import Any, Dict, Iterator, List, Optional
@@ -253,6 +254,10 @@ class LiveProvider:
         self.settle_s = float(settle_s)
         self.frame_hz = float(frame_hz)
         self.stale_after_s = float(stale_after_s)
+        # Recording is written by the acquisition pump and finalized by the
+        # trial watcher. Serialize the writer/manifest transition so stop
+        # cannot observe an in-progress auto-stop as bytes=0/sha256=null.
+        self._rec_lock = threading.RLock()
         self._reset_session(manual=True)
         self._latest: Optional[Dict[str, Any]] = None
         self._stop = False
@@ -337,13 +342,14 @@ class LiveProvider:
     def _begin_session(self) -> Any:
         # An armed recording survives session start so "Record then Start
         # stream" captures from the first line (bounded as always).
-        keep = (self._rec_fp, self._rec_path, self._rec_bytes,
-                self._rec_start, self._rec_max_s, self._rec_sha,
-                self._rec_last_info)
-        self._reset_session()
-        (self._rec_fp, self._rec_path, self._rec_bytes,
-         self._rec_start, self._rec_max_s, self._rec_sha,
-         self._rec_last_info) = keep
+        with self._rec_lock:
+            keep = (self._rec_fp, self._rec_path, self._rec_bytes,
+                    self._rec_start, self._rec_max_s, self._rec_sha,
+                    self._rec_last_info)
+            self._reset_session()
+            (self._rec_fp, self._rec_path, self._rec_bytes,
+             self._rec_start, self._rec_max_s, self._rec_sha,
+             self._rec_last_info) = keep
         self._stop = False
         self._session_start = time.time()
         self._session_id = (
@@ -543,53 +549,56 @@ class LiveProvider:
     def start_recording(self, path: str | Path,
                         max_seconds: float = REC_MAX_SECONDS) -> str:
         """Arm lossless raw-line recording (every line, as received)."""
-        if self._rec_fp is not None:
-            raise LiveSerialError("recording already active")
-        target = Path(path)
-        target.parent.mkdir(parents=True, exist_ok=True)
-        self._rec_fp = open(target, "w", encoding="ascii",
-                            errors="replace")
-        self._rec_path = str(target)
-        self._rec_bytes = 0
-        self._rec_start = time.time()
-        self._rec_max_s = min(float(max_seconds), self.REC_MAX_SECONDS)
-        self._rec_sha = None
-        return self._rec_path
+        with self._rec_lock:
+            if self._rec_fp is not None:
+                raise LiveSerialError("recording already active")
+            target = Path(path)
+            target.parent.mkdir(parents=True, exist_ok=True)
+            self._rec_fp = open(target, "w", encoding="ascii",
+                                errors="replace")
+            self._rec_path = str(target)
+            self._rec_bytes = 0
+            self._rec_start = time.time()
+            self._rec_max_s = min(float(max_seconds), self.REC_MAX_SECONDS)
+            self._rec_sha = None
+            return self._rec_path
 
     def _record_raw(self, line: str) -> None:
-        if self._rec_fp is None:
-            return
-        if (self._rec_start is not None and
-                time.time() - self._rec_start > self._rec_max_s):
-            self._stop_recording()  # bounded by design, never unbounded
-            return
-        text = line if line.endswith("\n") else line + "\n"
-        self._rec_fp.write(text)
-        self._rec_bytes += len(text.encode("ascii", errors="replace"))
+        with self._rec_lock:
+            if self._rec_fp is None:
+                return
+            if (self._rec_start is not None and
+                    time.time() - self._rec_start > self._rec_max_s):
+                self._stop_recording()  # bounded by design, never unbounded
+                return
+            text = line if line.endswith("\n") else line + "\n"
+            self._rec_fp.write(text)
+            self._rec_bytes += len(text.encode("ascii", errors="replace"))
 
     def _stop_recording(self) -> Optional[Dict[str, Any]]:
-        fp, self._rec_fp = self._rec_fp, None
-        if fp is None:
-            return None
-        try:
-            fp.close()
-        except OSError:
-            pass
-        info = {"path": self._rec_path, "bytes": self._rec_bytes,
-                "sha256": None}
-        if self._rec_path:
-            digest = hashlib.sha256()
+        with self._rec_lock:
+            fp, self._rec_fp = self._rec_fp, None
+            if fp is None:
+                return None
             try:
-                with open(self._rec_path, "rb") as fh:
-                    for chunk in iter(lambda: fh.read(65536), b""):
-                        digest.update(chunk)
-                info["sha256"] = digest.hexdigest()
+                fp.close()
             except OSError:
-                info["sha256"] = None
-        self._rec_sha = info["sha256"]
-        self._rec_start = None
-        self._rec_last_info = info
-        return info
+                pass
+            info = {"path": self._rec_path, "bytes": self._rec_bytes,
+                    "sha256": None}
+            if self._rec_path:
+                digest = hashlib.sha256()
+                try:
+                    with open(self._rec_path, "rb") as fh:
+                        for chunk in iter(lambda: fh.read(65536), b""):
+                            digest.update(chunk)
+                    info["sha256"] = digest.hexdigest()
+                except OSError:
+                    info["sha256"] = None
+            self._rec_sha = info["sha256"]
+            self._rec_start = None
+            self._rec_last_info = info
+            return info
 
     def stop_recording(self) -> Optional[Dict[str, Any]]:
         """Stop recording, checksum the file, report the manifest.
@@ -597,7 +606,8 @@ class LiveProvider:
         Returns the last manifest even if the session already ended
         (bounded auto-stop), so the checksum is never lost.
         """
-        return self._stop_recording() or self._rec_last_info
+        with self._rec_lock:
+            return self._stop_recording() or self._rec_last_info
 
     # -- frames ------------------------------------------------------------
     def frames(self) -> Iterator[Dict[str, Any]]:

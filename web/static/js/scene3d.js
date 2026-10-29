@@ -8,6 +8,7 @@
    three.js r160 vendored locally (see docs/software/THREEJS_VERSION.md). */
 import * as THREE from "three";
 import { OrbitControls } from "three/addons/OrbitControls.js";
+import { ReferenceVisualLayer } from "./referenceVisualLayer.js";
 // Phase 2: pure false-colour mapping for the live RF disturbance overlay.
 // Presentation only (no acquisition/inference); pernode.js has no imports,
 // so this adds no load cascade for any consumer of this scene.
@@ -20,6 +21,9 @@ export class RfLinkScene {
     this.model = {
       widthM: null, amplitudes: null, positionT: null, uncertainty: null,
     };
+    this.referenceLayer = null;
+    this._referenceOn = false;
+    this._refSaved = null;
   }
 
   // Scene height follows the CSS breakpoints (420 default, 300 ≤1024px,
@@ -60,6 +64,7 @@ export class RfLinkScene {
     // Grid floor (1 m cells, 8×8 — reference only, not a claim).
     const grid = new THREE.GridHelper(8, 8, 0x2c353b, 0x222c31);
     grid.position.y = 0;
+    this.grid = grid;
     this.scene.add(grid);
 
     // Nodes: router (tx, blue) at x=-2, ESP32 (rx, green) at x=+2.
@@ -131,6 +136,8 @@ export class RfLinkScene {
     // RF_ACTIVITY and below render nothing (no spatial claim visualized).
     this.zoneField = null;
 
+    this.referenceLayer = new ReferenceVisualLayer(this.scene);
+
     this.hud = document.createElement("div");
     this.hud.className = "scene-hud";
     this.container.appendChild(this.hud);
@@ -148,6 +155,7 @@ export class RfLinkScene {
   // Canvas background follows the UI theme (no dark island in light
   // mode). Cached per theme value — not re-read per frame.
   _syncThemeBg() {
+    if (this._referenceOn && this.scene) return;
     const theme = (document.documentElement.dataset || {}).theme || "";
     if (theme === this._bgTheme) return;
     this._bgTheme = theme;
@@ -392,6 +400,7 @@ export class RfLinkScene {
         mesh.position.set(0, 1.3, -1.95);
         this.scene.add(mesh);
         this.roomImage = mesh;
+        if (this._referenceOn) this._syncReferenceVisibility();
       }, undefined, () => { /* load failed: keep the no-image state */ });
     } catch { /* keep the no-image state */ }
   }
@@ -424,6 +433,7 @@ export class RfLinkScene {
     };
     put("A", this.markerA);
     put("B", this.markerB);
+    if (this._referenceOn) this._syncReferenceVisibility();
   }
 
   _ensureMarkers() {
@@ -463,6 +473,111 @@ export class RfLinkScene {
       new THREE.SpriteMaterial({ map: tex, transparent: true, depthTest: false }));
     sp.scale.set(0.5, 0.5, 1);
     return sp;
+  }
+
+  _evidenceObjects() {
+    return [
+      this.roomGroup, this.grid, this.routerNode, this.espNode, this.link,
+      this.uncMesh, this.posMarker, this.field, this.fieldB,
+      this.thermalA, this.thermalB, this.zoneField && this.zoneField.group,
+      this.markerA, this.markerB, this.roomImage,
+    ].filter(Boolean);
+  }
+
+  _syncReferenceVisibility() {
+    if (!this._referenceOn) return;
+    for (const object of this._evidenceObjects()) object.visible = false;
+  }
+
+  setReferenceView(on) {
+    const next = Boolean(on);
+    if (next === this._referenceOn) return;
+    this._referenceOn = next;
+    if (!this.ready || !this.scene || !this.referenceLayer) return;
+    if (next) {
+      this._refSaved = {
+        position: this.camera.position.clone(),
+        target: this.controls.target.clone(),
+        fov: this.camera.fov,
+        background: this.scene.background,
+        fog: this.scene.fog,
+        visibility: new Map(this._evidenceObjects().map((o) => [o, o.visible])),
+      };
+      this.referenceLayer.setVisible(true);
+      this.scene.background = new THREE.Color(0x18171a);
+      this.scene.fog = new THREE.Fog(0x18171a, 18, 30);
+      this._applyReferenceCamera();
+      this.controls.update();
+      this._syncReferenceVisibility();
+      this._referenceResponse();
+      this.referenceLayer.tick(performance.now(), this._animate);
+    } else {
+      this.referenceLayer.setVisible(false);
+      const saved = this._refSaved;
+      if (saved) {
+        this.camera.position.copy(saved.position);
+        this.controls.target.copy(saved.target);
+        this.camera.fov = saved.fov;
+        this.camera.updateProjectionMatrix();
+        this.scene.background = saved.background;
+        this.scene.fog = saved.fog;
+        this.controls.update();
+        for (const [object, visible] of saved.visibility) object.visible = visible;
+        for (const object of this._evidenceObjects()) {
+          if (!saved.visibility.has(object)) object.visible = true;
+        }
+      }
+      this._refSaved = null;
+      this.setModel(this.model);
+    }
+  }
+
+  setIllustrativeBody(on) {
+    this._bodyOn = Boolean(on);
+    if (this.referenceLayer) this.referenceLayer.setBody(this._bodyOn);
+    if (this._referenceOn) {
+      this._applyReferenceCamera();
+      this.controls.update();
+      this.referenceLayer.tick(performance.now(), this._animate);
+    }
+  }
+
+  _applyReferenceCamera() {
+    this.camera.fov = 33.4;
+    this.camera.updateProjectionMatrix();
+    if (this._bodyOn) {
+      this.camera.position.set(3.1, 2.2, 16.0);
+      this.controls.target.set(2.4, 1.2, 0.0);
+    } else {
+      this.camera.position.set(4.2415, 2.9481, 16.0);
+      this.controls.target.set(3.5415, 1.9481, 0.0);
+    }
+  }
+
+  _referenceResponse() {
+    if (!this.referenceLayer) return;
+    const a = this.model.nodes && this.model.nodes.A;
+    const b = this.model.nodes && this.model.nodes.B;
+    const aLive = Boolean(a) && !a.stale;
+    const bLive = Boolean(b) && !b.stale;
+    const level = (slot) => Math.max(0, Math.min(1, (Number(slot && slot.disturbMean) || 0) * 3));
+    this.referenceLayer.setResponse({
+      a: aLive ? level(a) : 0,
+      b: bLive ? level(b) : 0,
+      stale: Boolean((a || b) && !aLive && !bLive),
+    });
+  }
+
+  resetView() {
+    if (this._referenceOn) {
+      this._applyReferenceCamera();
+    } else {
+      this.camera.fov = 50;
+      this.camera.updateProjectionMatrix();
+      this.camera.position.set(4.5, 3.5, 6.5);
+      this.controls.target.set(0, 0.8, 0);
+    }
+    this.controls.update();
   }
 
   setModel(model) {
@@ -539,6 +654,7 @@ export class RfLinkScene {
       this.uncMesh.scale.x = Math.max(half * 2, 0.05) / 0.2;
       this.uncMesh.position.set(x, 0.5, 0);
     }
+    if (this._referenceOn) this._syncReferenceVisibility();
     this._updateHud();
   }
 
@@ -577,11 +693,17 @@ export class RfLinkScene {
       return;
     }
     this.controls.update();
+    if (this.referenceLayer && this._referenceOn) {
+      this._referenceResponse();
+      this.referenceLayer.tick(performance.now(), this._animate);
+    }
     this.renderer.render(this.scene, this.camera);
   }
 
   destroy() {
     this.ready = false;
+    try { this.referenceLayer?.dispose(); } catch { /* already torn down */ }
+    this.referenceLayer = null;
     try { this._clearRoomImage(); } catch { /* already torn down */ }
     try { this._clearThermal(); } catch { /* already torn down */ }
     try { this._clearZoneField(); } catch { /* already torn down */ }

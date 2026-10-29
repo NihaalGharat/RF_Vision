@@ -20,6 +20,96 @@ export function sourceFromMode(mode) {
   }
 }
 
+// Dual session is a separate authoritative state from the legacy
+// single-source provider. GET /api/v1/nodes is the only source of truth;
+// this projection never fabricates a single-source provider or changes
+// /api/v1/status or /api/v1/stream/status. Null means "no dual session";
+// callers then keep the existing single-source OFF/LIVE/FIXTURE/SIMULATION
+// behavior unchanged.
+export function dualProjection(nodes) {
+  if (!nodes || nodes.available !== true) return null;
+  const entries = Array.isArray(nodes.nodes) ? nodes.nodes : [];
+  const expected = Math.max(
+    2,
+    (nodes.session && Array.isArray(nodes.session.nodes) && nodes.session.nodes.length) || 0,
+  );
+  const live = entries.filter((n) => n
+    && n.source_state === "LIVE_VERIFIED"
+    && Number(n.valid) > 0
+    && n.connection !== "DEGRADED"
+    && n.connection !== "DISCONNECTED").length;
+  const stale = entries.some((n) => n && n.source_state === "STALE");
+  const down = entries.some((n) => n && (
+    n.source_state === "DISCONNECTED"
+    || n.connection === "DISCONNECTED"
+    || n.connection === "DEGRADED"
+  ));
+  const base = {
+    available: true,
+    sync: nodes.sync_state || "UNSYNCED",
+    live,
+    expected,
+  };
+  if (stale) return { ...base, state: "STALE", label: "DUAL STALE", tone: "warn" };
+  if (down) return { ...base, state: "DEGRADED", label: "DUAL DEGRADED", tone: "warn" };
+  if (entries.length < expected || live < expected) {
+    return { ...base, state: "STARTING", label: "DUAL STARTING", tone: "warn" };
+  }
+  if (nodes.sync_state === "SYNCED") {
+    return { ...base, state: "SYNCED", label: "DUAL LIVE / SYNCED", tone: "live" };
+  }
+  return {
+    ...base,
+    state: "SYNCING",
+    label: `DUAL LIVE / ${nodes.sync_state || "SYNCING"}`,
+    tone: "warn",
+  };
+}
+
+// Compare one node's observed BSSID/channel with the laptop's active
+// network. Missing provenance is UNKNOWN, never a silent match. BSSID and
+// channel are the authoritative fields already exposed by the existing APIs.
+export function networkMatch(network, node) {
+  const targetBssid = String(network && network.bssid || "").trim().toLowerCase();
+  const targetChannel = network && network.channel;
+  const nodeBssid = String(node && node.bssid || "").trim().toLowerCase();
+  const nodeChannel = node && node.channel;
+  if (!targetBssid || targetChannel == null) {
+    return {
+      state: "UNKNOWN", label: "NETWORK UNKNOWN",
+      reason: "laptop BSSID/channel unavailable",
+    };
+  }
+  if (!nodeBssid) {
+    return {
+      state: "UNKNOWN", label: "NETWORK UNKNOWN",
+      reason: "node BSSID not reported",
+    };
+  }
+  if (nodeBssid !== targetBssid) {
+    return {
+      state: "MISMATCH", label: "NETWORK MISMATCH",
+      reason: `node ${nodeBssid} ≠ laptop ${targetBssid}`,
+    };
+  }
+  if (nodeChannel == null) {
+    return {
+      state: "UNKNOWN", label: "NETWORK UNKNOWN",
+      reason: "node channel not reported",
+    };
+  }
+  if (Number(nodeChannel) !== Number(targetChannel)) {
+    return {
+      state: "MISMATCH", label: "NETWORK MISMATCH",
+      reason: `node channel ${nodeChannel} ≠ laptop channel ${targetChannel}`,
+    };
+  }
+  return {
+    state: "MATCH", label: "NETWORK MATCH",
+    reason: `BSSID ${targetBssid} · channel ${targetChannel}`,
+  };
+}
+
 export function badgeClass(source, stale) {
   if (stale) return "warn";
   switch (source) {

@@ -211,3 +211,89 @@ def test_server_routes_registered():
     # contract version untouched
     from web import contracts
     assert contracts.CONTRACT_VERSION == 3
+
+
+def test_provision_result_classifies_operator_states(monkeypatch):
+    def factory(device):
+        return FakePort(_happy_script())
+
+    monkeypatch.setattr(
+        network_api, "all_nodes_resolved",
+        lambda: {"esp32-a": "/dev/ttyUSB0"})
+    out = network_api.provision_nodes(
+        "Cafe Net", "pw123", node_ids=["esp32-a"],
+        port_factory=factory)
+    assert out["nodes"][0]["observed"] == "NODE_CONNECTED"
+
+
+def test_inspect_nodes_reads_association_without_secrets(monkeypatch):
+    monkeypatch.setattr(
+        network_api, "all_nodes_resolved",
+        lambda: {"esp32-a": "/dev/ttyUSB0"})
+    status = ("RFV_NET ssid=Cafe Net bssid=aa:bb:cc:dd:ee:ff "
+              "channel=6 ip=192.168.1.50")
+    out = network_api.inspect_nodes(
+        node_ids=["esp32-a"],
+        port_factory=lambda device: FakePort([
+            ("RFV_NET_STATUS", ["RFV_OK CONNECTED", status])]))
+    assert out["state"] == "INSPECTED"
+    assert out["nodes"][0]["state"] == "NODE_CONNECTED"
+    assert out["nodes"][0]["status"]["bssid"] == "aa:bb:cc:dd:ee:ff"
+    assert "password" not in repr(out).lower()
+
+
+def test_inspect_nodes_distinguishes_silent_and_disconnected(monkeypatch):
+    monkeypatch.setattr(
+        network_api, "all_nodes_resolved",
+        lambda: {"esp32-a": "/dev/ttyUSB0",
+                 "esp32-b": "/dev/ttyUSB1"})
+    ports = {
+        "/dev/ttyUSB0": FakePort([]),
+        "/dev/ttyUSB1": FakePort([
+            ("RFV_NET_STATUS", ["RFV_ERR not-associated"])]),
+    }
+    out = network_api.inspect_nodes(
+        node_ids=["esp32-a", "esp32-b"],
+        timeout_s=0.01,
+        port_factory=lambda device: ports[device])
+    by_id = {n["node_id"]: n for n in out["nodes"]}
+    assert out["state"] == "INCOMPLETE"
+    assert by_id["esp32-a"]["state"] == "NODE_SILENT"
+    assert by_id["esp32-b"]["state"] == "NODE_DISCONNECTED"
+
+
+def test_inspect_nodes_rejects_unknown_ids():
+    import pytest
+    with pytest.raises(ValueError):
+        network_api.inspect_nodes(node_ids=["esp32-z"])
+
+
+def test_new_routes_registered():
+    import web.server as server
+    src = open(server.__file__).read()
+    assert "/api/v1/network/inspect" in src
+    assert "/api/v1/trials/current" in src
+    assert "/api/v1/trials/start" in src
+    assert "/api/v1/trials/stop" in src
+
+
+def test_provision_state_taxonomy_is_explicit():
+    c = network_api.classify_provision_state
+    assert c("PROVISIONED", "associated") == "NODE_CONNECTED"
+    assert c("PROVISIONING_FAILED", "no resolved device for esp32-a") == "NODE_MISSING"
+    assert c("PROVISIONING_FAILED", "node silent while awaiting BEGIN") == "NODE_SILENT"
+    assert c("PROVISIONING_FAILED", "reconnect unconfirmed: not-associated") == "BAD_CREDENTIALS"
+    assert c("PROVISIONING_FAILED", "serial I/O failed") == "PROVISIONING_FAILED"
+
+
+def test_inspect_nodes_reports_missing_device(monkeypatch):
+    from csi.transport.nodes import NodeIdentityError
+    monkeypatch.setattr(network_api, "all_nodes_resolved", lambda: {})
+
+    def missing(node):
+        raise NodeIdentityError("no device")
+
+    monkeypatch.setattr(network_api, "resolve_device_node", missing)
+    out = network_api.inspect_nodes(node_ids=["esp32-a"])
+    assert out["state"] == "INCOMPLETE"
+    assert out["nodes"][0]["state"] == "NODE_MISSING"

@@ -16,7 +16,11 @@ import { Card, ModePill, PageHeader } from "../components/global.js";
 import { SafeButton } from "../components/controls.js";
 import { api } from "../services/api.js";
 import { frameFreshness, STALE_AFTER_MS } from "../services/sources.js";
-import { nodeKey, emptySlots, routeSnapshot, updateSlotDisturbance } from "../services/pernode.js";
+import {
+  nodeKey, emptySlots, routeSnapshot, updateSlotDisturbance,
+  ACTIVITY_LABEL, ACTIVITY_WINDOW_MS, activityState,
+  emptyActivityHistory, recordActivity, visibleActivity,
+} from "../services/pernode.js";
 import { emptyStreak, updateField, fieldSummary } from "../services/spatial.js";
 import { sourceStore, sensingStore, vizStore, visionStore, useStore } from "../state/store.js";
 // Validated spatial renderers, shared with the legacy console. Absolute-path
@@ -30,6 +34,7 @@ const PAINT_MIN_MS = 250;
 // Mirrors RfLinkScene.init() camera defaults — RESET VIEW restores these.
 const HOME_POS = [4.5, 3.5, 6.5];
 const HOME_TARGET = [0, 0.8, 0];
+const REFERENCE_SCENE_ARIA = "Illustrative reference view — one Wi-Fi AP transmitter and two ESP32 CSI receivers. Not live CSI, no location claim. Wave expansion is illustrative timing; intensity responds to measured CSI.";
 
 // Phase 1 (room twin foundation): approximate ESP32-A/B visual placement
 // presets. Layout only — NOT SURVEYED, NOT MEASURED; never an input to
@@ -40,18 +45,41 @@ const PLACE_PRESETS = {
   side: { A: { x: -1, z: 1.6 }, B: { x: 1, z: 1.6 } },
 };
 
-// Same HUD-extra composition as the legacy RF-field tab: source state,
-// stream rate, RSSI, sequence — telemetry only, no inference.
-function hudExtra(live) {
-  if (live && live.available) {
-    const st = live.stream;
-    const sg = live.signal;
-    return `${live.source_state} · ` +
-      `${st.rate_hz != null ? `${st.rate_hz.toFixed(1)} Hz` : "rate ?"} · ` +
-      `rssi ${sg.rssi_last != null ? sg.rssi_last : "?"} · ` +
-      `seq ${st.last_seq != null ? st.last_seq : "?"}`;
-  }
-  return "";
+function ActivityTrend({ tag, tone, slot, at, points, now }) {
+  const status = activityState(at ? now - at : null, STALE_AFTER_MS);
+  const series = visibleActivity(points, now);
+  const latest = slot && slot.disturbMean != null ? slot.disturbMean : null;
+  const peak = Math.max(0.05, ...series.map((p) => p.v));
+  const W = 220, H = 48, P = 3;
+  const x = (t) => P + ((t - (now - ACTIVITY_WINDOW_MS)) / ACTIVITY_WINDOW_MS) * (W - P * 2);
+  const y = (v) => H - P - Math.min(1, v / peak) * (H - P * 2);
+  const line = series.map((p) => `${x(p.t).toFixed(1)},${y(p.v).toFixed(1)}`).join(" ");
+  const color = tone === "B" ? "#c084fc" : "#37c6d4";
+  const label = `${tag} CSI relative activity. ${status.label}. ` +
+    `${latest != null ? `Current ${latest.toFixed(3)}. ` : ""}` +
+    `${series.length} samples in the last ${Math.round(ACTIVITY_WINDOW_MS / 1000)} seconds. ` +
+    "Uncalibrated; not a movement classification.";
+  return h("div", { className: `rfreact-activity-cell ${status.state.toLowerCase()}` },
+    h("div", { className: "rfreact-activity-head" },
+      h("p", { className: "rfreact-activity-node" }, tag),
+      h("span", { className: "rfreact-activity-state" }, status.label)),
+    h("div", { className: "rfreact-activity-value" }, latest != null ? latest.toFixed(3) : "—"),
+    h("svg", {
+      className: "rfreact-activity-spark", viewBox: `0 0 ${W} ${H}`,
+      role: "img", "aria-label": label,
+    },
+      h("line", { x1: P, y1: H - P, x2: W - P, y2: H - P, className: "rfreact-activity-axis" }),
+      line
+        ? h("polyline", {
+          points: line, fill: "none", stroke: color, strokeWidth: "2",
+          strokeLinejoin: "round", strokeLinecap: "round",
+          opacity: status.state === "STALE" ? 0.35 : 0.95,
+        })
+        : null),
+    h("p", { className: "rfreact-activity-meta" },
+      series.length
+        ? `${series.length} samples · peak ${peak.toFixed(2)} · per-node scale`
+        : "collecting…"));
 }
 
 // Same presence rule as legacy: backend presence_state rides the HUD as an
@@ -99,6 +127,8 @@ export function VisualizeView() {
   const vision = visionState.vision || null;
   const [widthM, setWidthM] = R.useState(null);
   const [sceneFailed, setSceneFailed] = R.useState(null);
+  const [referenceView, setReferenceView] = R.useState(false);
+  const [illustrativeBody, setIllustrativeBody] = R.useState(false);
 
   const sceneHost = R.useRef(null);
   const roomCanvas = R.useRef(null);
@@ -111,8 +141,11 @@ export function VisualizeView() {
   // per-node freshness against the existing STALE rule. Presentation only.
   const nodes = R.useRef(emptySlots());
   const nodeAt = R.useRef({ A: 0, B: 0 });
+  const activity = R.useRef(emptyActivityHistory());
   const paintAt = R.useRef(0);
+  const nodeAtRender = R.useRef(0);
   const paintRef = R.useRef(null);
+  const [, setNodeTick] = R.useState(0);
   // Phase 3 (approximate RF evidence): streak/persistence state for the
   // deterministic 3-zone field + the baseline-hold decision for the next
   // ingested frame. Reset whenever the arrangement or RF session changes so
@@ -145,7 +178,8 @@ export function VisualizeView() {
   const perNodeFreshness = (age) => {
     if (age === null || age === undefined) return frameFreshness(source.source, age);
     if (age > STALE_AFTER_MS) return { current: false, stale: true, label: `STALE — ${(age / 1000).toFixed(0)} s ago` };
-    if (source.source === "OFF") return { current: true, stale: false, label: "dual live" };
+    if (source.source === "OFF" && source.dual) return { current: true, stale: false, label: "dual live" };
+    if (source.source === "OFF") return { current: true, stale: false, label: "held (dual stopped)" };
     return frameFreshness(source.source, age);
   };
 
@@ -208,7 +242,9 @@ export function VisualizeView() {
     const w = widthM;
     const amplitudes = amps.current;
     const positionT = pos.current;
-    const showState = presenceLabel(p, vision);
+    const liveNow = [nodeAt.current.A, nodeAt.current.B].some(
+      (at) => at && (Date.now() - at) <= STALE_AFTER_MS);
+    const showState = presenceLabel(p, liveNow ? vision : null);
     const nm = { A: nodeModel(nodes.current.A, nodeAt.current.A), B: nodeModel(nodes.current.B, nodeAt.current.B) };
     // Phase 3: fold the two per-node disturbMean values into the approximate
     // 3-zone RF evidence field (candidate evidence — NOT VALIDATED). Freshness
@@ -228,7 +264,16 @@ export function VisualizeView() {
     const perNode = (nm.A || nm.B)
       ? `${nodeSummary("A esp32-a", nodes.current.A, nodeAt.current.A)} · ${nodeSummary("B esp32-b", nodes.current.B, nodeAt.current.B)}`
       : "";
-    const hud = [hudExtra(L), showState, perNode, evidenceLine].filter(Boolean).join(" · ") || null;
+    const nodeFlag = (slot, at) => {
+      if (!slot || !slot.amps) return "—";
+      return perNodeFreshness(at ? nowMs - at : null).stale ? "STALE" : "LIVE";
+    };
+    const hud = [
+      showState,
+      `A ${nodeFlag(nodes.current.A, nodeAt.current.A)}`,
+      `B ${nodeFlag(nodes.current.B, nodeAt.current.B)}`,
+      "CSI RELATIVE ACTIVITY",
+    ].filter(Boolean).join(" · ") || null;
     const room = roomCanvas.current;
     if (room) {
       drawRoom2d(room, {
@@ -242,13 +287,16 @@ export function VisualizeView() {
     }
     const host = sceneHost.current;
     if (host) {
-      describe(host, "3D RF signal field, per node. " +
-        (w ? `Room width ${w} m.` : "Room uncalibrated.") +
-        (roomImageUrl ? " Room image shown (visual context only, not RF evidence)." : "") +
-        (perNode ? ` ${perNode}.` : " No per-node frames.") +
-        (perNode ? " Live RF false-colour overlay, signal-derived (left A, right B)." : "") +
-        ` Approximate RF evidence: ${evidenceLine}.` +
-        (showState ? ` ${showState}.` : ""));
+      describe(host, referenceView
+        ? REFERENCE_SCENE_ARIA
+        : "3D RF signal field, per node. " +
+          (w ? `Room width ${w} m.` : "Room uncalibrated.") +
+          (roomImageUrl ? " Room image shown (visual context only, not RF evidence)." : "") +
+          (perNode ? ` ${perNode}.` : " No per-node frames.") +
+          (perNode ? " Live RF false-colour overlay, signal-derived (left A, right B)." : "") +
+          " Solid intensity responds to measured CSI; wave expansion is illustrative timing." +
+          ` Approximate RF evidence: ${evidenceLine}.` +
+          (showState ? ` ${showState}.` : ""));
     }
     if (scene.current && !sceneFailed) {
       scene.current.setModel({
@@ -309,6 +357,20 @@ export function VisualizeView() {
     }
   }, [roomImageUrl, sceneFailed]); // eslint-disable-line react-hooks/exhaustive-deps
 
+  R.useEffect(() => {
+    const s = scene.current;
+    if (s && !sceneFailed) {
+      try { s.setReferenceView(referenceView); } catch (e) { console.error("reference view", e); }
+    }
+  }, [referenceView, sceneFailed]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  R.useEffect(() => {
+    const s = scene.current;
+    if (s && !sceneFailed) {
+      try { s.setIllustrativeBody(illustrativeBody); } catch (e) { console.error("illustrative body", e); }
+    }
+  }, [illustrativeBody, sceneFailed]); // eslint-disable-line react-hooks/exhaustive-deps
+
   // Phase 1: push approximate A/B visual placement (layout only — NOT
   // SURVEYED, NOT MEASURED; never enters calibration or inference).
   // Phase 3: a changed arrangement invalidates the streak/hold/field built
@@ -335,9 +397,15 @@ export function VisualizeView() {
     const key = `${source.source}|${source.sourceState}`;
     if (srcKey.current !== null && srcKey.current !== key) {
       spatial.current = { streak: emptyStreak(), hold: false, field: null };
+      activity.current = emptyActivityHistory();
     }
     srcKey.current = key;
-    if (nodeKey(ev.node_id)) {
+    const incomingKey = nodeKey(ev.node_id);
+    if (incomingKey) {
+      const prevSeq = nodes.current[incomingKey] ? nodes.current[incomingKey].seq : null;
+      if (Number.isFinite(ev.seq) && Number.isFinite(prevSeq) && ev.seq < prevSeq) {
+        activity.current = { ...activity.current, [incomingKey]: [] };
+      }
       const r = routeSnapshot(nodes.current, ev);
       if (r.routed) {
         const k = r.routed;
@@ -346,6 +414,10 @@ export function VisualizeView() {
         // Default false preserves the validated adaptation behavior.
         nodes.current = { ...r.slots, [k]: updateSlotDisturbance(r.slots[k], undefined, spatial.current.hold) };
         nodeAt.current[k] = Date.now();
+        const atMs = (typeof ev.ts === "number" && Number.isFinite(ev.ts))
+          ? ev.ts * 1000 : Date.now();
+        activity.current = recordActivity(
+          activity.current, k, nodes.current[k].disturbMean, atMs);
       } else {
         return;
       }
@@ -355,6 +427,14 @@ export function VisualizeView() {
       pos.current = (typeof q.position === "number") ? q.position : null;
     }
     paintSoon(false);
+    // Per-node rows read refs directly; nudge a throttled render so the
+    // compact A/B strip shows the frame just ingested, not the prior one.
+    const now = (typeof performance !== "undefined" && performance.now)
+      ? performance.now() : Date.now();
+    if (!viz.paused && now - nodeAtRender.current >= PAINT_MIN_MS) {
+      nodeAtRender.current = now;
+      setNodeTick((t) => (t + 1) % 1000000);
+    }
   }, [source.lastEventTs]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Repaint on polled-telemetry / calibration / pause / resume changes.
@@ -377,9 +457,13 @@ export function VisualizeView() {
     const s = scene.current;
     if (s && s.ready) {
       try {
-        s.camera.position.set(HOME_POS[0], HOME_POS[1], HOME_POS[2]);
-        s.controls.target.set(HOME_TARGET[0], HOME_TARGET[1], HOME_TARGET[2]);
-        s.controls.update();
+        if (typeof s.resetView === "function") {
+          s.resetView();
+        } else {
+          s.camera.position.set(HOME_POS[0], HOME_POS[1], HOME_POS[2]);
+          s.controls.target.set(HOME_TARGET[0], HOME_TARGET[1], HOME_TARGET[2]);
+          s.controls.update();
+        }
         s.resize();
       } catch (e) { console.error("visualize reset", e); }
     }
@@ -390,20 +474,29 @@ export function VisualizeView() {
   }, [viz.viewToken]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const posShow = pos.current;
-  const showState = presenceLabel(p, vision);
   // Phase 3: last computed approximate-evidence summary (refreshed on every
   // throttled paint; informational text, never a localization claim).
   const evidenceShow = fieldSummary(spatial.current.field);
+  const nowMs = Date.now();
   const slotA = nodes.current.A;
   const slotB = nodes.current.B;
   // True while any per-node slot holds frames within the existing STALE
   // rule. The OFF banner below claims "last captured state" — that is only
   // true when no per-node data is live either.
   const dualLive = [nodeAt.current.A, nodeAt.current.B].some(
-    (at) => at && (Date.now() - at) <= STALE_AFTER_MS);
+    (at) => at && (nowMs - at) <= STALE_AFTER_MS);
+  const liveVision = dualLive ? vision : null;
+  const showState = presenceLabel(p, liveVision);
+  // Compact reference overlay: receiver status uses the same per-node
+  // freshness rule as the activity histories and 3D strips.
+  const receiverStatus = (slot, at) => {
+    if (!slot || !slot.amps) return "NO FRAMES";
+    const fr = perNodeFreshness(at ? nowMs - at : null);
+    return fr.stale ? "STALE" : "MEASURED";
+  };
   const slotRow = (tag, slot, at) => {
     if (!slot || !slot.amps) return "no frames yet";
-    const age = at ? Date.now() - at : null;
+    const age = at ? nowMs - at : null;
     const fr = perNodeFreshness(age);
     const d = slot.disturbMean != null ? ` · disturb ${slot.disturbMean.toFixed(3)}` : "";
     const stale = fr.stale ? " · STALE" : "";
@@ -413,7 +506,7 @@ export function VisualizeView() {
   return h("div", null,
     h(PageHeader, {
       eyebrow: "RF Vision", title: "Visualize", back: true,
-      actions: [h(ModePill, { source: source.source, stale: fresh.stale })],
+      actions: [h(ModePill, { source: source.source, stale: fresh.stale, dual: source.dual })],
     }),
     source.source === "SIMULATION"
       ? h("div", { className: "rfreact-sim-banner" }, "SIMULATED — backend simulated provider. Never evidence, never LIVE.")
@@ -424,59 +517,164 @@ export function VisualizeView() {
     fresh.stale
       ? h("div", { className: "rfreact-sim-banner" }, `STALE — last frame ${fresh.label}. Old measurements are not current; no replacement data is synthesized.`)
       : null,
-    source.source === "OFF" && !dualLive
+    source.source === "OFF" && !dualLive && !source.dual
       ? h("p", { className: "rfreact-note", style: { marginBottom: "16px" } }, "Source OFF — no live RF claim. Views below show last captured state for reference only.")
       : null,
-    source.source === "OFF" && dualLive
-      ? h("p", { className: "rfreact-note", style: { marginBottom: "16px" } }, "Dual session live — per-node views below show live measured signal. The single-source selector stays OFF while dual runs.")
+    source.dual && !dualLive
+      ? h("p", { className: "rfreact-note", style: { marginBottom: "16px" } }, `Dual session ${source.dual.label} — ${source.dual.live}/${source.dual.expected} nodes live; waiting for per-node frames in this view.`)
       : null,
-    h("div", { className: "rfreact-cols rfreact-cols-narrow" },
-      h("div", { className: "rfreact-col" },
-        h(Card, { label: "HUD", title: "Visualization HUD (real state)" },
-          kv([
-            ["source", `${source.source} (${source.sourceState})`],
-            ["rate", L && L.stream.rate_hz != null ? `${L.stream.rate_hz.toFixed(1)} Hz` : "UNKNOWN"],
-            ["rssi", p && p.rssi != null ? `${p.rssi} dBm` : (L && L.signal.rssi_last != null ? `${L.signal.rssi_last} dBm` : "UNKNOWN")],
-            ["seq", ev ? String(ev.seq) : (L && L.stream.last_seq != null ? String(L.stream.last_seq) : "UNKNOWN")],
-            ["geometry", widthM != null ? `${widthM.toFixed(1)} m link (reference only)` : "UNKNOWN (uncalibrated)"],
-            ["node A", slotRow("esp32-a", slotA, nodeAt.current.A)],
-            ["node B", slotRow("esp32-b", slotB, nodeAt.current.B)],
-            ["field", "LIVE RF FIELD · SIGNAL-DERIVED · PER-NODE · NOT CALIBRATED · NO LOCATION CLAIM"],
-            ["disturbance", "RF DISTURBANCE = MEASURED SIGNAL CHANGE (presentation emphasis, no threshold, no detection)"],
-            ["approx evidence", evidenceShow],
-            ["position", posShow != null ? `${posShow.toFixed(3)} RF-INFERRED (NOT VALIDATED)` : "none"],
-            ["observation", showState || "none"],
-            ["rendering", viz.paused ? "paused" : "live"],
-          ]),
+    source.source === "OFF" && dualLive
+      ? h("p", { className: "rfreact-note", style: { marginBottom: "16px" } },
+        source.dual
+          ? `Dual session ${source.dual.label} — per-node views below show live measured signal. The single-source selector stays OFF while dual runs.`
+          : "Dual session stopped — held per-node frames are within the 3 s freshness window; no new live data is being added.")
+      : null,
+    h("div", { className: "rfreact-scene-lead" },
+      h(Card, {
+        label: "3D RF field",
+        title: "Interactive RF signal field — per-node A/B (three.js r160, local)",
+        actions: [
+          h(SafeButton, {
+            action: "visualization only: pause/resume rendering; hardware and acquisition untouched",
+            label: viz.paused ? "RESUME VISUALIZATION" : "PAUSE VISUALIZATION",
+            onClick: async () => { vizStore.set({ paused: !viz.paused }); return viz.paused ? "rendering resumed" : "rendering paused"; },
+          }),
+          h(SafeButton, {
+            action: "visualization only: reset camera and local view token; hardware, acquisition and data untouched",
+            label: "RESET VIEW",
+            onClick: async () => { vizStore.set({ viewToken: viz.viewToken + 1, paused: false }); return "view reset (visualization only)"; },
+          }),
+        ],
+      },
+        sceneFailed
+          ? h("p", { className: "rfreact-note" }, `3D unavailable (${sceneFailed}). 2D view remains.`)
+          : h("div", {
+            className: "rfreact-scene-wrap", ref: sceneHost,
+            role: "img",
+            "aria-label": referenceView
+              ? REFERENCE_SCENE_ARIA
+              : "3D RF signal field, per node. Room uncalibrated. Solid intensity responds to measured CSI; wave expansion is illustrative timing.",
+          }),
+        referenceView
+          ? h("div", {
+            className: "rfreact-rf-arch", role: "group",
+            "aria-label": "RF architecture: one illustrative Wi-Fi AP transmitter and two physical ESP32 CSI receivers",
+          },
+            h("div", { className: "rfreact-rf-arch-source" },
+              h("span", { className: "rfreact-rf-arch-kicker" }, "TRANSMITTER"),
+              h("strong", null, "Wi-Fi AP / Hotspot — Illustrative RF Source"),
+              h("span", { className: "rfreact-rf-arch-detail" }, "One source · green pulse · illustrative waves")),
+            h("span", { className: "rfreact-rf-arch-arrow", "aria-hidden": "true" }, "RF →"),
+            h("div", { className: "rfreact-rf-arch-receivers" },
+              h("div", { className: "rfreact-rf-arch-rx a" },
+                h("span", { className: "rfreact-rf-arch-dot" }),
+                h("div", null,
+                  h("strong", null, "ESP32-A — CSI Receiver"),
+                  h("span", { className: "rfreact-rf-arch-detail" },
+                    `Measured stream A · ${receiverStatus(slotA, nodeAt.current.A)}`))),
+              h("div", { className: "rfreact-rf-arch-rx b" },
+                h("span", { className: "rfreact-rf-arch-dot" }),
+                h("div", null,
+                  h("strong", null, "ESP32-B — CSI Receiver"),
+                  h("span", { className: "rfreact-rf-arch-detail" },
+                    `Measured stream B · ${receiverStatus(slotB, nodeAt.current.B)}`)))),
+            h("p", { className: "rfreact-rf-arch-note" },
+              "One transmitter, two physical receivers. A and B are not two emitters. " +
+              "Each activity trace uses only its own receiver's measured CSI; wave radius/speed is illustrative, shell/floor intensity is CSI-derived."))
+          : null,
+        referenceView
+          ? h("p", { className: "rfreact-note rfreact-key-line", style: { marginTop: "10px" } },
+            "WAVE EXPANSION = ILLUSTRATIVE TIMING · SHELL/FLOOR INTENSITY = MEASURED CSI RESPONSE")
+          : null,
+        referenceView
+          ? h("p", { className: "rfreact-note", style: { marginTop: "10px" } },
+            "ILLUSTRATIVE REFERENCE VIEW — NOT LIVE CSI — NO LOCATION CLAIM. " +
+            "Expanding wavefronts, shells and pulse are a visual metaphor anchored at the green illustrative Wi-Fi AP source; their fixed radius, speed and direction do not encode distance, location or measured propagation. " +
+            "The hotspot/AP transmits; ESP32-A and ESP32-B receive. " +
+            "The floor grid is illustrative, and its brightness responds to measured signal change as a global presentation, not a per-cell map.")
+          : null,
+        referenceView
+          ? h("p", { className: "rfreact-note" },
+            "ROOM CONTEXT — UNKNOWN / ILLUSTRATIVE. No walls, obstacles, furniture, occupancy or positions are inferred from CSI.")
+          : null,
+        referenceView && illustrativeBody
+          ? h("p", { className: "rfreact-note", style: { color: "#e0a63c" } },
+            "ILLUSTRATIVE BODY — NOT MEASURED. Visibility is manual and independent of RF activity; " +
+            "not a detection, tracking, occupancy, identity or propagation claim.")
+          : null,
+        h("div", { className: "rfreact-activity" },
+          h("p", { className: "rfreact-activity-label" }, ACTIVITY_LABEL),
+          h("div", { className: "rfreact-activity-grid" },
+            h(ActivityTrend, {
+              tag: "ESP32-A · CSI RECEIVER", tone: "A", slot: slotA,
+              at: nodeAt.current.A, points: activity.current.A, now: nowMs,
+            }),
+            h(ActivityTrend, {
+              tag: "ESP32-B · CSI RECEIVER", tone: "B", slot: slotB,
+              at: nodeAt.current.B, points: activity.current.B, now: nowMs,
+            })),
+          h("p", { className: "rfreact-note" },
+            "45 s recent history from each node's own measured signal change. " +
+            "Stale inputs are labelled, never replaced by the sibling. " +
+            "A changing value is RF variation, not confirmed human movement. " +
+            "The expanding reference waves are illustrative timing; their intensity responds to measured CSI.")),
+        h("details", { className: "rfreact-scene-options" },
+          h("summary", null, "Node diagnostics — RSSI, sequence, session and false-colour legend"),
+          h("div", { className: "rfreact-node-strip rfreact-node-diagnostics" },
+            h("div", { className: "rfreact-node-cell" },
+              h("p", { className: "rfreact-node-label" }, "NODE A"),
+              h("p", { className: "rfreact-node-value" }, slotRow("esp32-a", slotA, nodeAt.current.A))),
+            h("div", { className: "rfreact-node-cell" },
+              h("p", { className: "rfreact-node-label" }, "NODE B"),
+              h("p", { className: "rfreact-node-value" }, slotRow("esp32-b", slotB, nodeAt.current.B))),
+            h("div", { className: "rfreact-node-cell" },
+              h("p", { className: "rfreact-node-label" }, "SESSION"),
+              h("p", { className: "rfreact-node-value" },
+                `${source.dual ? source.dual.label : `${source.source} (${source.sourceState})`} · ` +
+                `${L && L.stream.rate_hz != null ? `${L.stream.rate_hz.toFixed(1)} Hz` : "rate ?"} · ` +
+                `rssi ${p && p.rssi != null ? p.rssi : (L && L.signal.rssi_last != null ? L.signal.rssi_last : "?")} · ` +
+                `seq ${ev ? ev.seq : (L && L.stream.last_seq != null ? L.stream.last_seq : "?")}`))),
+          h("p", { className: "rfreact-note" },
+            "Each row updates only from its own node_id. An aged slot is marked STALE and dimmed in 3D; sibling data is never substituted."),
+          h("div", { className: "rfreact-row", style: { alignItems: "center" } },
+            h("span", { className: "rfreact-note" }, "RF CHANGE:"),
+            h("div", {
+              role: "img",
+              "aria-label": "False-colour legend: cool blue low measured change to red high measured change",
+              title: "False-colour legend — visual encoding only, no threshold",
+              style: {
+                width: "160px", height: "12px", borderRadius: "3px",
+                background: "linear-gradient(90deg,#00268c,#008cd9,#1ab373,#f2d933,#f2731a,#f21414)",
+              },
+            }),
+            h("span", { className: "rfreact-note" }, "low → high"),
+            h("span", { className: "rfreact-note" }, "Drag to orbit · scroll to zoom"))),
+        h("details", { className: "rfreact-scene-options" },
+          h("summary", null, "Scene options — reference view, room image and approximate ESP32 placement"),
+          h("div", { className: "rfreact-row", style: { alignItems: "center" } },
+            h("span", { className: "rfreact-note" }, "REFERENCE VIEW:"),
+            h(SafeButton, {
+              action: "visualization only: toggle the illustrative reference view; measured evidence, hardware, acquisition and data untouched",
+              label: referenceView ? "REFERENCE VIEW ON" : "REFERENCE VIEW OFF",
+              onClick: async () => {
+                const next = !referenceView;
+                setReferenceView(next);
+                if (!next) setIllustrativeBody(false);
+                return next ? "illustrative reference view on (not live CSI)" : "measured evidence view restored";
+              },
+            }),
+            referenceView
+              ? h(SafeButton, {
+                action: "visualization only: manually show or hide the illustrative body; never inferred from CSI and never affects measurement",
+                label: illustrativeBody ? "BODY ON" : "BODY OFF",
+                onClick: async () => {
+                  const next = !illustrativeBody;
+                  setIllustrativeBody(next);
+                  return next ? "illustrative body shown (not measured)" : "illustrative body hidden";
+                },
+              })
+              : null),
           h("div", { className: "rfreact-row" },
-            h(SafeButton, {
-              action: "visualization only: pause/resume rendering; hardware and acquisition untouched",
-              label: viz.paused ? "RESUME VISUALIZATION" : "PAUSE VISUALIZATION",
-              onClick: async () => { vizStore.set({ paused: !viz.paused }); return viz.paused ? "rendering resumed" : "rendering paused"; },
-            }),
-            h(SafeButton, {
-              action: "visualization only: reset camera and local view token; hardware, acquisition and data untouched",
-              label: "RESET VIEW",
-              onClick: async () => { vizStore.set({ viewToken: viz.viewToken + 1, paused: false }); return "view reset (visualization only)"; },
-            }),
-          ),
-          h("p", { className: "rfreact-note" },
-            "Visualization controls are fenced off from hardware controls by route: nothing on this screen can provision, start, or stop anything physical.")),
-        h(Card, { label: "RF Vision", title: "RF Vision pipeline (dual only, engineering)" },
-          kv(visionRows(vision, visionState.visionError)),
-          vision && vision.xai && vision.xai.statement
-            ? h("p", { className: "rfreact-note" }, `Why: ${vision.xai.statement}`)
-            : null,
-          h("p", { className: "rfreact-note" },
-            "Engineering/demonstration state. UNCALIBRATED, NOT VALIDATED. No identity, no bodies, no calibrated probability.")),
-        h(Card, { label: "Scene", title: "3D RF signal field — per-node (three.js r160, local)" },
-          sceneFailed
-            ? h("p", { className: "rfreact-note" }, `3D unavailable (${sceneFailed}). 2D view remains.`)
-            : h("div", {
-              className: "rfreact-scene-wrap", ref: sceneHost,
-              role: "img", "aria-label": "3D RF signal field, per node. Room uncalibrated.",
-            }),
-          h("div", { className: "rfreact-row", style: { marginTop: "4px" } },
             h("input", {
               ref: fileRef, type: "file", accept: "image/*", onChange: onRoomFile,
               "aria-label": "Upload room image (visual context only)",
@@ -519,36 +717,47 @@ export function VisualizeView() {
             `VISUAL PLACEMENT — NOT SURVEYED · NOT MEASURED. Layout only ` +
             `(A ${places.A.x.toFixed(1)}, ${places.A.z.toFixed(1)} · B ${places.B.x.toFixed(1)}, ${places.B.z.toFixed(1)}); ` +
             "never enters calibration, inference, or any scientific calculation."),
-          h("div", { className: "rfreact-row", style: { alignItems: "center" } },
-            h("span", { className: "rfreact-note" }, "RF CHANGE:"),
-            h("div", {
-              role: "img",
-              "aria-label": "False-colour legend: cool blue low measured change to red high measured change",
-              title: "False-colour legend — visual encoding only, no threshold",
-              style: {
-                width: "160px", height: "12px", borderRadius: "3px",
-                background: "linear-gradient(90deg,#00268c,#008cd9,#1ab373,#f2d933,#f2731a,#f21414)",
-              },
-            }),
-            h("span", { className: "rfreact-note" }, "low → high")),
           h("p", { className: "rfreact-note" },
-            "LIVE RF FIELD — SIGNAL-DERIVED. Left band = NODE A RF CHANGE · right band = NODE B RF CHANGE. " +
-            "RELATIVE MEASURED CHANGE · NO THRESHOLD · NO LOCATION CLAIM. Colours encode per-tone signal change " +
-            "(tone order along the band — NOT room position); stale nodes dim with STALE, never shown as live."),
-          h("p", { className: "rfreact-note" },
-            "Drag to orbit · scroll to zoom. One signal strip per node, driven only by that node's live amplitude " +
-            "vector (tone index along the strip — NOT room coordinates). Strip height = measured signal change " +
+            "One signal strip per node, driven only by that node's live amplitude vector " +
+            "(tone index along the strip — NOT room coordinates). Strip height = measured signal change " +
             "(RF DISTURBANCE). Strip layout is presentation arrangement, not physical geometry. " +
-            "LIVE RF FIELD · SIGNAL-DERIVED · PER-NODE · NOT CALIBRATED · NO LOCATION CLAIM. No bodies, no mesh.")),
+            "No bodies, no mesh."),
+          h("p", { className: "rfreact-note" },
+            "Visualization controls are fenced off from hardware controls by route: nothing on this screen can provision, start, or stop anything physical.")),
+      )),
+    h("div", { className: "rfreact-cols rfreact-cols-narrow" },
+      h("div", { className: "rfreact-col" },
+        h(Card, { label: "Evidence", title: "Signal evidence — uncalibrated" },
+          kv([
+            ["geometry", widthM != null ? `${widthM.toFixed(1)} m link (reference only)` : "UNKNOWN (uncalibrated)"],
+            ["field", "RF FIELD · SIGNAL-DERIVED · PER-NODE · NOT CALIBRATED · NO LOCATION CLAIM"],
+            ["disturbance", "RF DISTURBANCE = MEASURED SIGNAL CHANGE (presentation emphasis, no threshold, no detection)"],
+            ["approx evidence", evidenceShow],
+            ["position", posShow != null ? `${posShow.toFixed(3)} RF-INFERRED (NOT VALIDATED)` : "none"],
+            ["observation", showState || "none"],
+            ["rendering", viz.paused ? "paused" : "live"],
+          ])),
+        h(Card, { label: "RF Vision", title: "RF Vision pipeline (dual only, engineering)" },
+          dualLive
+            ? kv(visionRows(vision, visionState.visionError))
+            : h("p", { className: "rfreact-note" },
+              "NO LIVE RF DATA — backend pipeline evidence is withheld until fresh per-node frames reach this browser."),
+          dualLive && vision && vision.xai && vision.xai.statement
+            ? h("p", { className: "rfreact-note" }, `Why: ${vision.xai.statement}`)
+            : null,
+          h("p", { className: "rfreact-note" },
+            "Engineering/demonstration state. UNCALIBRATED, NOT VALIDATED. No identity, no bodies, no calibrated probability.")),
       ),
       h("div", { className: "rfreact-col" },
-        h(Card, { label: "Room", title: "2D room view" },
-          h("canvas", {
-            className: "rfreact-viz", ref: roomCanvas,
-            role: "img", "aria-label": "2D room view. Room unknown, uncalibrated.",
-          }),
-          h("p", { className: "rfreact-note" },
-            "Dashed outline = uncalibrated. Positions default to link ends until measured. 1-D link view — 2-D/3-D not claimed.")),
+        h("details", { className: "rfreact-scene-options" },
+          h("summary", null, "Advanced — uncalibrated 2D room view"),
+          h(Card, { label: "Room", title: "2D room view" },
+            h("canvas", {
+              className: "rfreact-viz", ref: roomCanvas,
+              role: "img", "aria-label": "2D room view. Room unknown, uncalibrated.",
+            }),
+            h("p", { className: "rfreact-note" },
+              "Dashed outline = uncalibrated. Positions default to link ends until measured. 1-D link view — 2-D/3-D not claimed."))),
       ),
     ));
 }

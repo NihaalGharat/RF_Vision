@@ -9,9 +9,12 @@ WebSocket handshake followed by fixture frames with valid provenance.
 from __future__ import annotations
 
 import base64
+import contextlib
+import io
 import json
 import os
 import socket
+import struct
 import threading
 import time
 import unittest
@@ -280,9 +283,57 @@ class ConsoleServerTests(unittest.TestCase):
         finally:
             self.post("/api/v1/stream/stop")
 
+    def test_ws_abrupt_reset_is_clean_and_isolated(self):
+        self.post("/api/v1/source", {"mode": "fixture"})
+        self.post("/api/v1/stream/start")
+        before = len(console.STATE.subscribers)
+        sock = None
+        stderr = io.StringIO()
+        try:
+            with contextlib.redirect_stderr(stderr):
+                sock = socket.create_connection(("127.0.0.1", self.port),
+                                                timeout=10)
+                key = base64.b64encode(os.urandom(16)).decode()
+                sock.sendall(
+                    ("GET /ws/sensing HTTP/1.1\r\n"
+                     "Host: 127.0.0.1\r\n"
+                     "Upgrade: websocket\r\n"
+                     "Connection: Upgrade\r\n"
+                     f"Sec-WebSocket-Key: {key}\r\n"
+                     "Sec-WebSocket-Version: 13\r\n\r\n").encode())
+                response = b""
+                while b"\r\n\r\n" not in response:
+                    chunk = sock.recv(4096)
+                    if not chunk:
+                        break
+                    response += chunk
+                self.assertIn("101 Switching Protocols",
+                              response.decode("ascii", "replace"))
+                time.sleep(0.2)
+                sock.setsockopt(socket.SOL_SOCKET, socket.SO_LINGER,
+                                struct.pack("ii", 1, 0))
+                sock.close()
+                sock = None
+                time.sleep(0.7)
+            code, data = self.get("/api/v1/health")
+            self.assertEqual(code, 200)
+            self.assertEqual(data["status"], "ok")
+            self.assertNotIn("Traceback", stderr.getvalue())
+            self.assertNotIn("ConnectionResetError", stderr.getvalue())
+            self.assertEqual(len(console.STATE.subscribers), before)
+        finally:
+            if sock is not None:
+                sock.close()
+            self.post("/api/v1/stream/stop")
+
     def test_ws_rejects_plain_http(self):
         code, _ = self.get("/ws/sensing")
         self.assertEqual(code, 426)
+
+    def test_ws_receive_timeout_exceeds_client_ping_interval(self):
+        browser_ping_interval_s = 30.0
+        self.assertGreater(console.WS_RECV_TIMEOUT_S,
+                           browser_ping_interval_s)
 
 
 _STUB_DUAL_STATS = {
@@ -383,10 +434,12 @@ class DualSessionRouteTests(unittest.TestCase):
     def setUp(self):
         StubDualSession.instances = []
         console.set_dual_session(None)
+        console._TRIAL = None
         self.state.streaming = False
 
     def tearDown(self):
         console.set_dual_session(None)
+        console._TRIAL = None
 
     # -- helpers ------------------------------------------------------
     def get(self, path):
@@ -463,6 +516,27 @@ class DualSessionRouteTests(unittest.TestCase):
             console._DUAL_SESSION_FACTORY = StubDualSession
         self.assertEqual(code, 409)
         self.assertIsNone(console.DUAL)
+
+    def test_trial_current_is_idle_without_session(self):
+        code, data = self.get("/api/v1/trials/current")
+        self.assertEqual(code, 200)
+        self.assertEqual(data["state"], "IDLE")
+        self.assertFalse(data["active"])
+
+    def test_trial_start_requires_dual_session(self):
+        code, data = self.post("/api/v1/trials/start", {})
+        self.assertEqual(code, 409)
+        self.assertIn("dual session", data["error"])
+
+    def test_trial_stop_without_trial_is_idempotent(self):
+        code, data = self.post("/api/v1/trials/stop", {})
+        self.assertEqual(code, 200)
+        self.assertEqual(data["state"], "IDLE")
+
+    def test_inspect_refused_while_dual_runs(self):
+        self.post("/api/v1/dual/start")
+        code, _ = self.post("/api/v1/network/inspect", {"nodes": ["esp32-a"]})
+        self.assertEqual(code, 409)
 
     def test_provision_refused_while_dual_runs(self):
         self.post("/api/v1/dual/start")

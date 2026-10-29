@@ -15,7 +15,7 @@ import { SafeButton } from "../components/controls.js";
 import { api } from "../services/api.js";
 import { frameFreshness } from "../services/sources.js";
 import { sourceFromMode } from "../services/sources.js";
-import { sourceStore, sensingStore, vizStore, useStore } from "../state/store.js";
+import { sourceStore, sensingStore, systemStore, vizStore, useStore } from "../state/store.js";
 import { drawHeatmap, drawSparkline, drawBars, drawLine, placeholder, describe } from "../viz.js";
 
 const R = window.React;
@@ -79,6 +79,7 @@ function paintAll(refs, bufs, meta) {
 export function LiveView({ ws, refresh }) {
   const source = useStore(sourceStore);
   const sensing = useStore(sensingStore);
+  const system = useStore(systemStore);
   const viz = useStore(vizStore);
 
   const bufs = R.useRef({ amps: [], rssi: [], trail: [] });
@@ -94,6 +95,7 @@ export function LiveView({ ws, refresh }) {
   const p = (ev && ev.payload) || null;
   const ageMs = source.lastEventTs ? Date.now() - source.lastEventTs : null;
   const fresh = frameFreshness(source.source, ageMs);
+  const freshness = source.dual ? frameFreshness("LIVE", ageMs) : fresh;
   const L = sensing.live;
   const latestAmps = p && Array.isArray(p.amplitudes) && p.amplitudes.length ? p.amplitudes : null;
   const renderingPaused = viz.paused;
@@ -151,12 +153,18 @@ export function LiveView({ ws, refresh }) {
 
   // Validity health uses only backend-declared states: no invented thresholds.
   let health = "UNAVAILABLE";
-  if (L) {
+  if (source.dual) {
+    health = source.dual.state === "SYNCED"
+      ? (freshness.stale ? "DUAL SYNCED — FRAME STALE"
+        : (freshness.current ? "DUAL ACQUISITION HEALTHY (SYNCED)"
+          : "DUAL SYNCED — WAITING FOR FRAMES"))
+      : `DUAL ${source.dual.state}`;
+  } else if (L) {
     if (L.stream.stale) health = "STALE";
     else if (L.gate.passed) health = "VALID (gate VERIFIED)";
     else health = "INVALID (gate UNVERIFIED)";
   } else if (ev) {
-    health = fresh.stale ? "STALE" : "UNAVAILABLE (no live session)";
+    health = freshness.stale ? "STALE" : "UNAVAILABLE (no live session)";
   }
 
   const dup = L && L.duplication;
@@ -168,8 +176,10 @@ export function LiveView({ ws, refresh }) {
     ? String(p.presence_state ?? p.presence).toUpperCase() : "IDLE";
   const evConfShow = p && p.rf_evidence_confidence != null
     ? `${(p.rf_evidence_confidence * 100).toFixed(0)}% UNCALIBRATED` : "UNCALIBRATED";
-  const nodeShow = p && p.node_mode ? p.node_mode
-    : (L ? `CH ${L.signal.channel ?? "?"} · ${L.signal.bssid || "?"}` : "NO NODES");
+  const nodeShow = source.dual
+    ? `${source.dual.live}/${source.dual.expected} nodes · ${source.dual.sync}`
+    : (p && p.node_mode ? p.node_mode
+      : (L ? `CH ${L.signal.channel ?? "?"} · ${L.signal.bssid || "?"}` : "NO NODES"));
 
   const validPct = L && L.stream.valid_pct != null ? L.stream.valid_pct : null;
 
@@ -177,8 +187,8 @@ export function LiveView({ ws, refresh }) {
     h(PageHeader, {
       eyebrow: "RF Vision", title: "Live Sensing",
       actions: [
-        h(ModePill, { source: source.source, stale: fresh.stale }),
-        h("span", { className: "rfreact-note" }, `frame: ${fresh.label}`),
+        h(ModePill, { source: source.source, stale: freshness.stale, dual: source.dual }),
+        h("span", { className: "rfreact-note" }, `frame: ${freshness.label}`),
       ],
     }),
     source.source === "SIMULATION"
@@ -187,11 +197,14 @@ export function LiveView({ ws, refresh }) {
     source.source === "FIXTURE"
       ? h("div", { className: "rfreact-sim-banner" }, "OFFLINE FIXTURE — recorded replay. Never live.")
       : null,
-    fresh.stale
-      ? h("div", { className: "rfreact-sim-banner" }, `STALE — last frame ${fresh.label}. Old measurements are not current; no replacement data is synthesized.`)
+    freshness.stale
+      ? h("div", { className: "rfreact-sim-banner" }, `STALE — last frame ${freshness.label}. Old measurements are not current; no replacement data is synthesized.`)
       : null,
-    source.source === "OFF"
+    source.source === "OFF" && !source.dual
       ? h("p", { className: "rfreact-note", style: { marginBottom: "16px" } }, "Source OFF — canvases below retain last captured frames for reference only; they are not live.")
+      : null,
+    source.dual
+      ? h("p", { className: "rfreact-note", style: { marginBottom: "16px" } }, `Dual session ${source.dual.label} — this legacy single-source chart view shows the latest A/B frame, not a fused measurement. Use Visualize for independent per-node measured activity.`)
       : null,
     h("div", { className: "rfreact-cols rfreact-cols-narrow" },
       h("div", { className: "rfreact-col" },
@@ -217,40 +230,48 @@ export function LiveView({ ws, refresh }) {
           p
             ? kv([
               ["seq", seq != null ? String(seq) : "UNKNOWN"],
-              ["received", source.lastEventTs ? `${new Date(source.lastEventTs).toISOString().slice(11, 19)} UTC (${fresh.label})` : "UNKNOWN"],
+              ["received", source.lastEventTs ? `${new Date(source.lastEventTs).toISOString().slice(11, 19)} UTC (${freshness.label})` : "UNKNOWN"],
               ["rssi", rssiShow],
               ["tones", tones],
               ["amplitude", ampSummary],
               ["validated", String(p.validated)],
               ["source", p.source_state || source.sourceState],
-              ["nodes", p.node_mode || "UNKNOWN"],
+              ["node", ev.node_id || p.node_mode || "UNKNOWN"],
             ])
-            : unknown(source.source === "OFF" ? "no source — OFF" : "no frames yet")),
-        h(Card, { label: "Diagnostics", title: "Packets / sequence" },
-          (ev || L)
-            ? kv([
-              ["last seq", seq != null ? String(seq) : "UNKNOWN"],
-              ["subcarriers", latestAmps ? String(latestAmps.length) : (L && L.signal.tones != null ? String(L.signal.tones) : "—")],
-              ["gaps", L ? String(L.stream.gaps) : "UNKNOWN"],
-              ["missing", L ? (L.stream.missing.length ? L.stream.missing.join(", ") : "none") : "UNKNOWN"],
-              ["duplicates", L ? String(L.stream.duplicates) : "UNKNOWN"],
-              ["out-of-order", L ? String(L.stream.out_of_order) : "UNKNOWN"],
-              ["records (lossless)", L ? String(L.stream.valid) : "UNKNOWN"],
-              ["rate", L && L.stream.rate_hz != null ? `${L.stream.rate_hz.toFixed(1)} Hz` : "UNKNOWN"],
-            ])
-            : unknown("none yet")),
-        h(Card, { label: "Trail", title: "1-D trajectory — RF-inferred position trail" },
-          h("canvas", { className: "rfreact-viz", ref: trailRef, role: "img", "aria-label": "Position trail chart. No trail available." }),
-          h("p", { className: "rfreact-note" }, "Recent RF-inferred link positions, oldest first. Empty = none available (no models, or nobody detected). NOT VALIDATED — do not cite.")),
+            : unknown(source.source === "OFF" && !source.dual ? "no source — OFF" : "no frames yet")),
+        h("details", { className: "rfreact-scene-options" },
+          h("summary", null, "Advanced — packet diagnostics & trajectory"),
+          h(Card, { label: "Diagnostics", title: "Packets / sequence" },
+            (ev || L)
+              ? kv([
+                ["last seq", seq != null ? String(seq) : "UNKNOWN"],
+                ["subcarriers", latestAmps ? String(latestAmps.length) : (L && L.signal.tones != null ? String(L.signal.tones) : "—")],
+                ["gaps", L ? String(L.stream.gaps) : "UNKNOWN"],
+                ["missing", L ? (L.stream.missing.length ? L.stream.missing.join(", ") : "none") : "UNKNOWN"],
+                ["duplicates", L ? String(L.stream.duplicates) : "UNKNOWN"],
+                ["out-of-order", L ? String(L.stream.out_of_order) : "UNKNOWN"],
+                ["records (lossless)", L ? String(L.stream.valid) : "UNKNOWN"],
+                ["rate", L && L.stream.rate_hz != null ? `${L.stream.rate_hz.toFixed(1)} Hz` : "UNKNOWN"],
+              ])
+              : unknown("none yet")),
+          h(Card, { label: "Trail", title: "1-D trajectory — RF-inferred position trail" },
+            h("canvas", { className: "rfreact-viz", ref: trailRef, role: "img", "aria-label": "Position trail chart. No trail available." }),
+            h("p", { className: "rfreact-note" }, "Recent RF-inferred link positions, oldest first. Empty = none available (no models, or nobody detected). NOT VALIDATED — do not cite."))),
       ),
       h("div", { className: "rfreact-col" },
         h(Card, { label: "Acquisition", title: "Acquisition state" },
-          kv([
+          kv(source.dual ? [
+            ["source", `${source.dual.label} (dual session)`],
+            ["nodes", `${source.dual.live}/${source.dual.expected} live · ${source.dual.sync}`],
+            ["mode", "dual (single-source selector OFF by contract)"],
+            ["freshness", freshness.label],
+            ["ws", system.wsState],
+          ] : [
             ["source", `${source.source} (${source.sourceState})`],
             ["stream", source.running ? "running" : "stopped"],
             ["mode", source.mode],
             ["freshness", fresh.label],
-            ["ws", sensing.status ? `${sensing.status.connection}` : "UNKNOWN"],
+            ["ws", system.wsState],
           ]),
           h(ErrorRow, { error: sensing.liveError, onRetry: refresh, what: "live" }),
           h("div", { className: "rfreact-row" },
@@ -265,47 +286,65 @@ export function LiveView({ ws, refresh }) {
           h("p", { className: "rfreact-note" }, "START/STOP change real acquisition. PAUSE affects rendering only.")),
         h(Card, { label: "Validity", title: "Validity gate" },
           h("div", { style: { display: "flex", alignItems: "center", justifyContent: "space-between", gap: "16px" } },
-            h(Ring, {
-              value: validPct, size: 104,
-              label: validPct != null ? `${validPct.toFixed(1)}%` : null,
-              sublabel: L ? (L.stream.stale ? "STALE" : (L.gate.passed ? "GATE VERIFIED" : "GATE UNVERIFIED")) : "NO SESSION",
-            }),
+            source.dual
+              ? h("div", { style: { minWidth: 0 } },
+                h("p", { className: "rfreact-badge live", style: { fontSize: "11px" } },
+                  source.dual.label),
+                h("p", { className: "rfreact-note", style: { margin: "8px 0 0" } },
+                  `${source.dual.live}/${source.dual.expected} nodes live · sync ${source.dual.sync}`))
+              : h(Ring, {
+                value: validPct, size: 104,
+                label: validPct != null ? `${validPct.toFixed(1)}%` : null,
+                sublabel: L ? (L.stream.stale ? "STALE" : (L.gate.passed ? "GATE VERIFIED" : "GATE UNVERIFIED")) : "NO SESSION",
+              }),
             h("p", { className: "rfreact-mono", style: { fontSize: "10px", lineHeight: 1.8, color: "var(--rv-muted)", textAlign: "right", margin: 0 } },
               L && L.stream.rate_hz != null ? `rate ${L.stream.rate_hz.toFixed(1)} Hz` : "rate UNKNOWN",
               h("br", null),
               L ? `malformed ${L.stream.malformed}` : "malformed UNKNOWN",
               h("br", null),
               dupShow === "none" ? "duplication none" : `duplication ${dupShow}`)),
-          L
+          source.dual
             ? kv([
               ["health", health],
-              ["gate", L.gate.passed ? "VERIFIED" : `UNVERIFIED — ${(L.gate.reasons || []).join("; ")}`],
-              ["valid", L.stream.valid_pct != null ? `${L.stream.valid_pct.toFixed(2)} %` : "UNKNOWN"],
-              ["freshness", L.stream.last_update_age_s != null
-                ? `${L.stream.last_update_age_s.toFixed(1)} s ago${L.stream.stale ? " — STALE" : ""}` : "no data"],
+              ["gate", "PER-NODE VALIDITY → Hardware / Visualize"],
+              ["freshness", ageMs != null ? `${(ageMs / 1000).toFixed(1)} s ago${freshness.stale ? " — STALE" : ""}` : "no frames"],
+              ["source", "dual session (not the legacy single-source gate)"],
             ])
-            : (ev
+            : (L
               ? kv([
                 ["health", health],
-                ["gate", "NOT AVAILABLE FROM CURRENT BACKEND (non-live provider)"],
-                ["source", p.source_state || source.sourceState],
+                ["gate", L.gate.passed ? "VERIFIED" : `UNVERIFIED — ${(L.gate.reasons || []).join("; ")}`],
+                ["valid", L.stream.valid_pct != null ? `${L.stream.valid_pct.toFixed(2)} %` : "UNKNOWN"],
+                ["freshness", L.stream.last_update_age_s != null
+                  ? `${L.stream.last_update_age_s.toFixed(1)} s ago${L.stream.stale ? " — STALE" : ""}` : "no data"],
               ])
-              : unknown("NO LIVE SESSION"))),
-        h(Card, { label: "Sensing", title: "Presence / activity — NOT VALIDATED" },
-          h("canvas", { className: "rfreact-viz", ref: barsRef, role: "img", "aria-label": "Presence and confidence bars. No data yet." }),
-          p
-            ? kv([
-              ["state", p.presence_state ?? p.presence ?? "UNKNOWN"],
-              ["rf evidence", p.rf_evidence_confidence != null
-                ? `${(p.rf_evidence_confidence * 100).toFixed(0)} % (UNCALIBRATED)` : "none"],
-              ["provenance", p.provenance ?? "UNKNOWN"],
-              ["nodes", p.node_mode ?? "UNKNOWN"],
-            ])
-            : unknown("no frames yet"),
-          h("p", { className: "rfreact-note" }, "NOT VALIDATED — no human-presence claim, no activity classification. RF Evidence Confidence is UNCALIBRATED product state, never a probability.")),
-        h(Card, { label: "Phase", title: "Phase stream — gated" },
-          h("canvas", { className: "rfreact-viz", ref: phaseRef, role: "img", "aria-label": "Phase stream placeholder. Phase is gated; amplitude only." }),
-          h("p", { className: "rfreact-note" }, "Amplitude-only pipeline: phase is not consumed until validated. Displayed as GATED, never synthesized.")),
+              : (ev
+                ? kv([
+                  ["health", health],
+                  ["gate", "NOT AVAILABLE FROM CURRENT BACKEND (non-live provider)"],
+                  ["source", p.source_state || source.sourceState],
+                ])
+                : unknown("NO LIVE SESSION")))),
+        h("details", { className: "rfreact-scene-options" },
+          h("summary", null, "Advanced — experimental inference & phase"),
+          h(Card, { label: "Sensing", title: "Presence / activity — NOT VALIDATED" },
+            h("canvas", { className: "rfreact-viz", ref: barsRef, role: "img", "aria-label": "Presence and confidence bars. No data yet." }),
+            p
+              ? kv([
+                ["state", p.presence_state ?? p.presence ?? "UNKNOWN"],
+                ["rf evidence", p.rf_evidence_confidence != null
+                  ? `${(p.rf_evidence_confidence * 100).toFixed(0)} % (UNCALIBRATED)` : "none"],
+                ["provenance", p.provenance ?? "UNKNOWN"],
+                ["nodes", p.node_mode ?? "UNKNOWN"],
+              ])
+              : unknown("no frames yet"),
+            h("p", { className: "rfreact-note" },
+              source.dual
+                ? "NOT VALIDATED — latest legacy single-frame inference, not a per-node fusion. Use Visualize for independent A/B measured activity. RF Evidence Confidence is UNCALIBRATED, never a probability."
+                : "NOT VALIDATED — no human-presence claim, no activity classification. RF Evidence Confidence is UNCALIBRATED product state, never a probability.")),
+          h(Card, { label: "Phase", title: "Phase stream — gated" },
+            h("canvas", { className: "rfreact-viz", ref: phaseRef, role: "img", "aria-label": "Phase stream placeholder. Phase is gated; amplitude only." }),
+            h("p", { className: "rfreact-note" }, "Amplitude-only pipeline: phase is not consumed until validated. Displayed as GATED, never synthesized."))),
       ),
     ));
 }

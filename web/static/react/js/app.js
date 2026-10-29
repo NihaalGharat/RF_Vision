@@ -7,7 +7,7 @@ import { h } from "./h.js";
 import { Nav, useRoute } from "./router.js";
 import { api } from "./services/api.js";
 import { WsService } from "./services/websocket.js";
-import { sourceFromMode } from "./services/sources.js";
+import { sourceFromMode, dualProjection } from "./services/sources.js";
 import {
   systemStore, sourceStore, hardwareStore, sensingStore,
   researchStore, visionStore, useStore,
@@ -40,11 +40,20 @@ async function refreshAll() {
       (d) => hardwareStore.set({ readiness: d, readinessError: null }),
       (e) => hardwareStore.set({ readinessError: String(e.message || e) })),
     nodes: api.nodes().then(
-      (d) => hardwareStore.set({ nodes: d, nodesError: null }),
-      (e) => hardwareStore.set({ nodesError: String(e.message || e) })),
+      (d) => {
+        hardwareStore.set({ nodes: d, nodesError: null });
+        sourceStore.set({ dual: dualProjection(d) });
+      },
+      (e) => {
+        hardwareStore.set({ nodesError: String(e.message || e) });
+        sourceStore.set({ dual: null });
+      }),
     experiment: api.experiment().then(
       (d) => researchStore.set({ experiment: d, experimentError: null }),
       (e) => researchStore.set({ experimentError: String(e.message || e) })),
+    trial: api.trialCurrent().then(
+      (d) => researchStore.set({ trial: d, trialError: null }),
+      (e) => researchStore.set({ trialError: String(e.message || e) })),
     live: api.live().then(
       (d) => sensingStore.set({ live: d && d.available ? d : null, liveError: null }),
       (e) => sensingStore.set({ liveError: String(e.message || e) })),
@@ -62,6 +71,7 @@ function Shell({ ws }) {
   const R = window.React;
   const route = useRoute();
   const system = useStore(systemStore);
+  const source = useStore(sourceStore);
   const ctx = { ws, refresh: refreshAll };
   const [glowStrong, setGlowStrong] = R.useState(false);
 
@@ -97,7 +107,7 @@ function Shell({ ws }) {
         view,
         h("footer", { className: "rfreact-foot" },
           h("span", null, system.health
-            ? `provenance: ${system.health.source} · ${system.health.source_state} · web ${system.health.version}`
+            ? `provenance: ${system.health.source} · ${source.dual ? source.dual.label : system.health.source_state} · web ${system.health.version}`
             : "provenance: console unreachable"),
           h("span", null, "RF Vision research instrument — estimates are not conclusions"),
           h(Clock, null),

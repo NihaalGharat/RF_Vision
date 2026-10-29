@@ -34,6 +34,7 @@ export const systemStore = createStore({
 export const sourceStore = createStore({
   source: "OFF", sourceState: "DISCONNECTED",
   running: false, mode: "off",
+  dual: null,
   lastEvent: null, lastEventTs: 0,
 });
 // Network + nodes + provisioning + RF READY + sync.
@@ -41,6 +42,7 @@ export const hardwareStore = createStore({
   network: null, networkError: null,
   readiness: null, readinessError: null,
   nodes: null, nodesError: null,
+  nodeInspect: null, nodeInspectError: null,
   provResult: null,
 });
 // CSI / RSSI / packets / sequence / validity / current frame / evidence.
@@ -56,6 +58,7 @@ export const visionStore = createStore({
 export const researchStore = createStore({
   experiment: null, experimentError: null,
   recording: null, recordMsg: null,
+  trial: null, trialError: null, trialMsg: null,
 });
 // Visualization-only: render pause, view reset token. Never hardware.
 export const vizStore = createStore({ paused: false, viewToken: 0 });

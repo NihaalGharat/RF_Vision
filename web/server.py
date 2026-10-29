@@ -49,6 +49,7 @@ from web import __version__ as WEB_VERSION
 from web import contracts
 from web import network as network_api
 from web import source as sources
+from web import trials as trial_api
 from web import ws as ws_codec
 from web.dual_node import DualNodeSession
 
@@ -64,6 +65,7 @@ __all__ = ["DEFAULT_PORT", "ConsoleState", "ConsoleHandler",
 
 DEFAULT_PORT = 8130
 STALE_AFTER_S = 3.0
+WS_RECV_TIMEOUT_S = 45.0
 
 #: Validated hardware baseline surfaced by /api/v1/experiment + /hardware.
 #: Receiver identity pinned by RFVISION-003R-C2 (current board).
@@ -318,6 +320,9 @@ DUAL = None
 #: Read by GET /api/v1/vision.
 VISION = None
 
+#: Attached audio-guided trial recorder (None = no trial this process).
+_TRIAL = None
+
 #: Serializes dual-session check-and-set (duplicate-start prevention).
 _dual_lock = threading.Lock()
 
@@ -470,23 +475,80 @@ def dual_start() -> Dict[str, Any]:
 
 def dual_stop() -> Dict[str, Any]:
     """Stop + detach the backend DualNodeSession (idempotent)."""
+    global _TRIAL, _dual_forward
     with _dual_lock:
         session = DUAL
         if session is None:
             return {"running": False,
                     "reason": "no dual session running"}
+        recorder = _TRIAL
+        if recorder is not None and recorder.active:
+            try:
+                recorder.stop(reason="dual session stopped")
+            except Exception:
+                pass
         try:
             session.stop()
         finally:
             set_dual_session(None)
             _detach_vision()
-            global _dual_forward
             forward, _dual_forward = _dual_forward, None
         if forward is not None and forward.is_alive():
             # Session stop ends frames(); join only the exited forwarder.
             forward.join(timeout=5.0)
         return {"running": False,
                 "reason": "dual session stopped; ports released"}
+
+
+def trial_status_payload() -> Dict[str, Any]:
+    """GET /api/v1/trials/current — active or last trial sidecar state."""
+    recorder = _TRIAL
+    return recorder.status() if recorder is not None else trial_api.idle_payload()
+
+
+def trial_readiness() -> Dict[str, Any]:
+    """Authoritative startup prerequisite, reusing GET /rf_readiness."""
+    dual_info = DUAL.session_stats() if DUAL is not None else None
+    return network_api.rf_readiness_payload(
+        dual_info=dual_info, nodes_expected=2)
+
+
+def trial_start(payload: Dict[str, Any]) -> Dict[str, Any]:
+    """POST /api/v1/trials/start — begin timed dual-node raw recording."""
+    global _TRIAL
+    with _dual_lock:
+        if DUAL is None:
+            raise RuntimeError(
+                "start the dual session before recording a trial")
+        if _TRIAL is not None and _TRIAL.active:
+            raise RuntimeError("trial already running (stop it first)")
+        try:
+            readiness = trial_readiness()
+        except Exception as exc:
+            raise RuntimeError(
+                f"RF readiness could not be verified: {exc}") from exc
+        if readiness.get("rf_ready") is not True:
+            state = readiness.get("state") or "UNKNOWN"
+            reason = (readiness.get("reason")
+                      or "dual RF readiness is not satisfied")
+            raise RuntimeError(
+                "RF READY required to start a trial "
+                f"(current: {state}) — {reason}")
+        recorder = trial_api.TrialRecorder(DUAL)
+        recorder.start(phases=payload.get("phases"),
+                       audio_enabled=bool(
+                           payload.get("audio_enabled", True)))
+        _TRIAL = recorder
+        return recorder.status()
+
+
+def trial_stop(reason: str = "operator stopped the trial") -> Dict[str, Any]:
+    """POST /api/v1/trials/stop — stop early and preserve partial captures."""
+    with _dual_lock:
+        recorder = _TRIAL
+        if recorder is None:
+            return trial_api.idle_payload()
+        return recorder.stop(reason=reason)
 
 
 def dual_status_payload() -> Dict[str, Any]:
@@ -717,6 +779,8 @@ class ConsoleHandler(BaseHTTPRequestHandler):
                         else 1)
             self._json(network_api.rf_readiness_payload(
                 dual_info=dual_info, nodes_expected=expected))
+        elif path == "/api/v1/trials/current":
+            self._json(trial_status_payload())
         elif path == "/api/v1/live":
             live = (STATE.provider if STATE.provider.mode == "live"
                     else None)
@@ -830,6 +894,41 @@ class ConsoleHandler(BaseHTTPRequestHandler):
                 self._error(str(exc), 400)
             except RuntimeError as exc:
                 self._error(str(exc), 409)
+        elif path == "/api/v1/network/inspect":
+            if DUAL is not None:
+                self._error("stop the dual session first "
+                            "(POST /api/v1/dual/stop) "
+                            "before inspecting node networks", 409)
+                return
+            if STATE.streaming or STATE.provider.mode == "live":
+                self._error("stop the live source first "
+                            "(POST /api/v1/source {\"mode\": \"off\"}) "
+                            "before inspecting node networks", 409)
+                return
+            body = self._read_json()
+            node_ids = body.get("nodes")
+            if node_ids is not None and not isinstance(node_ids, list):
+                self._error("bad nodes: expected a list of node ids",
+                            400)
+                return
+            try:
+                self._json(network_api.inspect_nodes(
+                    node_ids=([str(n) for n in node_ids]
+                              if node_ids is not None else None)))
+            except ValueError as exc:
+                self._error(str(exc), 400)
+        elif path == "/api/v1/trials/start":
+            body = self._read_json()
+            try:
+                self._json(trial_start(body))
+            except RuntimeError as exc:
+                self._error(str(exc), 409)
+            except ValueError as exc:
+                self._error(str(exc), 400)
+        elif path == "/api/v1/trials/stop":
+            body = self._read_json()
+            reason = str(body.get("reason") or "operator stopped the trial")
+            self._json(trial_stop(reason=reason))
         elif path == "/api/v1/dual/start":
             try:
                 self._json(dual_start())
@@ -873,7 +972,10 @@ class ConsoleHandler(BaseHTTPRequestHandler):
             self._error(f"handshake failed: {exc}", 400)
             return
         sock = self.connection
-        sock.sendall(response.encode("ascii"))
+        try:
+            sock.sendall(response.encode("ascii"))
+        except ConnectionError:
+            return
         STATE.subscribe(sock)
         self.close_connection = True
         try:
@@ -883,13 +985,14 @@ class ConsoleHandler(BaseHTTPRequestHandler):
                  "source_state": STATE.effective_state()},
                 source="rfvision-web")))
             while True:
-                _, payload = ws_codec.recv_frame(sock, timeout=30.0)
+                _, payload = ws_codec.recv_frame(
+                    sock, timeout=WS_RECV_TIMEOUT_S)
                 try:
                     msg = json.loads(payload.decode("utf-8"))
                 except ValueError:
                     continue
                 self._ws_command(sock, msg)
-        except ws_codec.WsError:
+        except (ws_codec.WsError, ConnectionError):
             pass
         finally:
             STATE.unsubscribe(sock)

@@ -1,10 +1,9 @@
 /* WebSocket service — preserves the existing /ws/sensing contract.
    Same semantics as the legacy console client: single stream endpoint, JSON
-   text only, 30 s ping, exponential-backoff reconnect (max 10 attempts),
-   schema-1 envelope validation, pong filtering. Not a new protocol. */
+   text only, 30 s ping, indefinite exponential-backoff reconnect (capped at
+   30 s), schema-1 envelope validation, pong filtering. Not a new protocol. */
 
 const RECONNECT_DELAYS_MS = [1000, 2000, 4000, 8000, 16000, 30000];
-const MAX_ATTEMPTS = 10;
 
 function wsUrl(path = "/ws/sensing") {
   const proto = location.protocol === "https:" ? "wss" : "ws";
@@ -90,11 +89,6 @@ export class WsService {
 
   _schedule() {
     if (!this.wanted) return;
-    if (this.attempts >= MAX_ATTEMPTS) {
-      this.wanted = false;
-      this._setState("disconnected");
-      return;
-    }
     const delay = RECONNECT_DELAYS_MS[Math.min(this.attempts, RECONNECT_DELAYS_MS.length - 1)];
     this.attempts += 1;
     this._setState("reconnecting");

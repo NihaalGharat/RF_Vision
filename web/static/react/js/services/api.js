@@ -48,7 +48,8 @@ export const api = {
   setSource: (mode, extra) => post("/api/v1/source", { mode, ...(extra || {}) }),
   // Hardware / RFVISION-012
   network: () => get("/api/v1/network"),
-  provision: (ssid, password) => post("/api/v1/network/provision", { ssid, password }),
+  provision: (ssid, password, nodes) => post("/api/v1/network/provision", { ssid, password, ...(nodes ? { nodes } : {}) }),
+  inspectNodes: (nodes) => post("/api/v1/network/inspect", { ...(nodes ? { nodes } : {}) }),
   dualStart: () => post("/api/v1/dual/start"),
   dualStop: () => post("/api/v1/dual/stop"),
   rfReadiness: () => get("/api/v1/rf_readiness"),
@@ -60,6 +61,9 @@ export const api = {
   experiment: () => get("/api/v1/experiment"),
   recordStart: (maxSeconds) => post("/api/v1/live/record/start", { max_seconds: maxSeconds }),
   recordStop: () => post("/api/v1/live/record/stop"),
+  trialCurrent: () => get("/api/v1/trials/current"),
+  trialStart: (audioEnabled) => post("/api/v1/trials/start", { audio_enabled: !!audioEnabled }),
+  trialStop: (reason) => post("/api/v1/trials/stop", { reason }),
   // Deferred-phase reads (exposed for later phases; not polled in Phase 1)
   calibration: () => get("/api/v1/calibration"),
   localization: () => get("/api/v1/localization"),

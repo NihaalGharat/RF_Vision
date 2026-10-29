@@ -135,3 +135,49 @@ export function thermalColor(t) {
     a[2] + (b[2] - a[2]) * f,
   ];
 }
+
+export const ACTIVITY_LABEL = "CSI RELATIVE ACTIVITY — UNCALIBRATED";
+export const ACTIVITY_WINDOW_MS = 45000;
+export const ACTIVITY_SAMPLE_MS = 250;
+export const ACTIVITY_MAX_POINTS = 240;
+
+export function emptyActivityHistory() {
+  return { A: [], B: [] };
+}
+
+export function recordActivity(history, key, value, atMs) {
+  if (!history || !NODE_SLOTS.includes(key)) return history;
+  if (!Number.isFinite(value) || !Number.isFinite(atMs)) return history;
+  const prev = Array.isArray(history[key]) ? history[key] : [];
+  const last = prev.length ? prev[prev.length - 1] : null;
+  if (last && atMs < last.t) return history;
+  if (last && atMs - last.t < ACTIVITY_SAMPLE_MS) return history;
+  const cutoff = atMs - ACTIVITY_WINDOW_MS;
+  const kept = prev.filter((p) => p && p.t >= cutoff);
+  kept.push({ t: atMs, v: Math.max(0, value) });
+  if (kept.length > ACTIVITY_MAX_POINTS) {
+    kept.splice(0, kept.length - ACTIVITY_MAX_POINTS);
+  }
+  return { ...history, [key]: kept };
+}
+
+export function visibleActivity(points, nowMs, windowMs = ACTIVITY_WINDOW_MS) {
+  if (!Array.isArray(points) || !Number.isFinite(nowMs)) return [];
+  const span = Number.isFinite(windowMs) ? windowMs : ACTIVITY_WINDOW_MS;
+  const cutoff = nowMs - span;
+  return points.filter((p) => p && Number.isFinite(p.t) &&
+    Number.isFinite(p.v) && p.t >= cutoff);
+}
+
+export function activityState(ageMs, staleAfterMs = 3000) {
+  if (ageMs === null || ageMs === undefined || !Number.isFinite(ageMs)) {
+    return { state: "NO_FRAMES", label: "NO FRAMES" };
+  }
+  if (ageMs > staleAfterMs) {
+    return {
+      state: "STALE",
+      label: `STALE — ${Math.max(0, Math.round(ageMs / 1000))} s`,
+    };
+  }
+  return { state: "LIVE", label: "LIVE" };
+}

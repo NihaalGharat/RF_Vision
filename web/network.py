@@ -31,12 +31,19 @@ from typing import Any, Callable, Dict, List, Optional
 from csi.transport import network_context as netctx
 from csi.transport import provisioning as prov
 from csi.transport import rf_readiness as readiness
-from csi.transport.nodes import NODES, all_nodes_resolved
+from csi.transport.nodes import (
+    NODES,
+    NodeIdentityError,
+    all_nodes_resolved,
+    resolve_device_node,
+)
 
 __all__ = [
     "network_status_payload",
     "rf_readiness_payload",
     "provision_nodes",
+    "inspect_nodes",
+    "classify_provision_state",
     "last_network",
 ]
 
@@ -222,6 +229,119 @@ class _SerialProvisionPort:
             self._fd = None
 
 
+def _resolve_targets(targets: List[str]) -> Dict[str, str]:
+    try:
+        resolved = all_nodes_resolved()
+    except Exception:
+        resolved = {}
+    devices: Dict[str, str] = {}
+    for nid in targets:
+        if nid in resolved:
+            devices[nid] = resolved[nid]
+            continue
+        try:
+            devices[nid] = resolve_device_node(NODES[nid])
+        except NodeIdentityError:
+            continue
+    return devices
+
+
+def classify_provision_state(state: str, reason: str) -> str:
+    """Map provisioning diagnostics to an operator-facing node state."""
+    text = (reason or "").lower()
+    if state == "PROVISIONED":
+        return "NODE_CONNECTED"
+    if "no resolved device" in text or "node resolution failed" in text:
+        return "NODE_MISSING"
+    if ("silent" in text or "no node response" in text
+            or "no response" in text or "timed out" in text
+            or "timeout" in text):
+        return "NODE_SILENT"
+    if ("reconnect unconfirmed" in text or "reconnect-failed" in text
+            or "rejected provisioning" in text):
+        return "BAD_CREDENTIALS"
+    return "PROVISIONING_FAILED"
+
+
+def inspect_nodes(node_ids: Optional[List[str]] = None,
+                  timeout_s: float = 2.0,
+                  port_factory: Optional[Callable[[str], Any]] = None,
+                  ) -> Dict[str, Any]:
+    """Read current RFV_NET status from nodes without changing credentials."""
+    targets = list(node_ids) if node_ids else ["esp32-a", "esp32-b"]
+    unknown = [n for n in targets if n not in NODES]
+    if unknown:
+        raise ValueError(f"unknown node ids: {unknown}")
+    devices = _resolve_targets(targets)
+    results: List[Dict[str, Any]] = []
+    for nid in targets:
+        device = devices.get(nid)
+        if not device:
+            results.append({"node_id": nid, "state": "NODE_MISSING",
+                            "reason": f"no resolved device for {nid}"})
+            continue
+        port = (port_factory(device) if port_factory is not None
+                else _SerialProvisionPort(device))
+        result: Dict[str, Any] = {"node_id": nid, "state": "NODE_SILENT",
+                                  "reason": "no RFV_NET status returned"}
+        try:
+            port.open()
+            port.write_line("RFV_NET_STATUS")
+            deadline = time.monotonic() + max(0.1, float(timeout_s))
+            while True:
+                remaining = deadline - time.monotonic()
+                if remaining <= 0:
+                    break
+                line = port.read_line(remaining)
+                if line is None:
+                    break
+                text = line.strip()
+                if not text.startswith("RFV_"):
+                    continue
+                if text.startswith("RFV_NET"):
+                    try:
+                        status = prov.parse_status_line(text)
+                    except ValueError as exc:
+                        result = {
+                            "node_id": nid, "state": "NODE_ERROR",
+                            "reason": prov.redact(
+                                f"unparseable RFV_NET status: {exc}", [])}
+                    else:
+                        result = {
+                            "node_id": nid, "state": "NODE_CONNECTED",
+                            "status": status,
+                            "reason": "association read from node"}
+                    break
+                if text.startswith("RFV_ERR"):
+                    detail = text[len("RFV_ERR"):].strip()
+                    result = {
+                        "node_id": nid,
+                        "state": ("NODE_DISCONNECTED"
+                                  if detail == "not-associated"
+                                  else "NODE_ERROR"),
+                        "reason": f"node reported {detail or 'error'}"}
+                    break
+        except OSError as exc:
+            result = {"node_id": nid, "state": "NODE_SILENT",
+                      "reason": prov.redact(
+                          f"serial I/O failed for {nid}: {exc}", [])}
+        finally:
+            try:
+                port.close()
+            except Exception:
+                pass
+        results.append(result)
+    states = {r["state"] for r in results}
+    if states <= {"NODE_CONNECTED", "NODE_DISCONNECTED"}:
+        overall = "INSPECTED"
+    elif "NODE_SILENT" in states or "NODE_MISSING" in states:
+        overall = "INCOMPLETE"
+    else:
+        overall = "FAILED"
+    return {"state": overall, "nodes": results,
+            "reason": "current association queried; no credentials changed"}
+
+
 def provision_nodes(ssid: str, password: str,
                     node_ids: Optional[List[str]] = None,
                     timeout_s: float = 20.0,
@@ -230,10 +350,11 @@ def provision_nodes(ssid: str, password: str,
     """Provision ESP32 nodes to an SSID over USB serial (password-safe).
 
     Returns ``{"state","nodes":[...], "reason"}``. Raises
-    :class:`ValueError` for bad input (incl. unknown node ids) and
-    :class:`RuntimeError` when a board has no resolved device. The
-    password never appears in results, reasons, or tracebacks — every
-    failure string passes through :func:`provisioning.redact`.
+    :class:`ValueError` for bad input (incl. unknown node ids). Missing
+    boards are reported per node so an operator can recover one node
+    without requiring the other to be present. The password never
+    appears in results, reasons, or tracebacks — every failure string
+    passes through :func:`provisioning.redact`.
     """
     targets = list(node_ids) if node_ids else ["esp32-a", "esp32-b"]
     unknown = [n for n in targets if n not in NODES]
@@ -241,12 +362,7 @@ def provision_nodes(ssid: str, password: str,
         raise ValueError(f"unknown node ids: {unknown}")
     creds = prov.Credentials(ssid, password)
     secrets = [ssid, *creds.secrets()]
-    try:
-        devices = all_nodes_resolved()
-    except Exception as exc:
-        creds.clear()
-        raise RuntimeError(prov.redact(
-            f"node resolution failed: {exc}", secrets)) from exc
+    devices = _resolve_targets(targets)
     session = prov.ProvisioningSession(targets)
     results: List[Dict[str, Any]] = []
     try:
@@ -273,18 +389,22 @@ def provision_nodes(ssid: str, password: str,
                     port.close()
                 except Exception:
                     pass
+            reason = prov.redact(res.reason, secrets)
             results.append({"node_id": res.node_id, "state": res.state,
+                            "observed": classify_provision_state(
+                                res.state, reason),
                             "status": dict(res.status),
-                            "reason": prov.redact(res.reason, secrets)})
+                            "reason": reason})
     finally:
         creds.clear()
     failed = [r for r in results if r["state"] != "PROVISIONED"]
     if failed:
         names = ", ".join(r["node_id"] for r in failed)
         return {"state": "PROVISIONING_FAILED", "nodes": results,
-                "reason": f"provisioning failed for: {names}; "
-                          f"nodes keep prior credentials; retry or "
-                          f"re-check serial connections"}
+                "reason": f"provisioning failed for: {names}; failed "
+                          f"nodes keep prior credentials, successful "
+                          f"nodes may already use the stored credentials; "
+                          f"retry or re-check serial connections"}
     return {"state": "NODES_CONNECTING", "nodes": results,
             "reason": "credentials stored; nodes reconnecting — verify "
                       "via GET /api/v1/rf_readiness (CSI + sync gate RF "

@@ -71,14 +71,24 @@ const PILL_META = {
   OFF: { color: "#5c7190", bg: "rgba(92,113,144,0.12)" },
 };
 
-export function ModePill({ source, stale }) {
+export function ModePill({ source, stale, dual }) {
+  const dualMeta = dual && dual.tone === "live"
+    ? { color: "#34d399", bg: "rgba(52,211,153,0.12)" }
+    : { color: "#fbbf24", bg: "rgba(251,191,36,0.12)" };
   const key = stale ? "SIMULATION" : (PILL_META[source] ? source : "OFF");
-  const meta = stale
-    ? { color: "#fbbf24", bg: "rgba(251,191,36,0.12)" }
-    : PILL_META[key];
-  const label = stale ? `STALE ${source}` : source;
+  const meta = dual && dual.label
+    ? dualMeta
+    : stale
+      ? { color: "#fbbf24", bg: "rgba(251,191,36,0.12)" }
+      : PILL_META[key];
+  const label = dual && dual.label
+    ? dual.label
+    : stale ? `STALE ${source}` : source;
+  const title = dual && dual.label
+    ? `dual-session status · ${dual.live}/${dual.expected} live · sync ${dual.sync}`
+    : "active data source (backend provider mode)";
   return h("span", {
-    className: "rfreact-pill", title: "active data source (backend provider mode)",
+    className: "rfreact-pill", title,
     style: { color: meta.color, borderColor: `${meta.color}55`, background: meta.bg },
   },
     h("span", { className: "dot", style: { background: meta.color, boxShadow: `0 0 6px ${meta.color}` } }),
